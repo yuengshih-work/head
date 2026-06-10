@@ -200,9 +200,20 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
         </div>
         <div class="info-box">若上午/下午在不同案場，請分別選擇，費用自動各拆一半</div>
         <div id="labor-list"></div>
+
+        <!-- 代墊款區塊 -->
+        <div id="advance-section" style="display:none">
+          <hr class="divider">
+          <div class="section-hd" style="margin-bottom:8px">
+            <h3>本期代墊款</h3>
+            <span style="font-size:11px;color:var(--muted)">儲存時自動同步至案場支出</span>
+          </div>
+          <div id="advance-list"></div>
+        </div>
+
         <hr class="divider">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:13px;color:var(--muted)">小計 <strong id="labor-total" style="font-size:16px;color:var(--text)">$0</strong></div>
+          <div style="font-size:13px;color:var(--muted)">人力小計 <strong id="labor-total" style="font-size:16px;color:var(--text)">$0</strong></div>
           <button class="btn primary" onclick="saveLaborAlloc()">💾 儲存分配</button>
         </div>
       </div></div>
@@ -370,7 +381,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -423,13 +434,28 @@ function signOut() {
 // ═══════════════════════════════════════
 //  設定 & 狀態
 // ═══════════════════════════════════════
-let CFG = { costUrl:'', crewUrls:{}, sites:[], crews:[] };
+let CFG = {
+  costUrl:'https://script.google.com/macros/s/AKfycbzn8Uq3wuWEYyly6slzAGYWvWDjM-YCLbPCE3bh5iCoVz8TOfsUcHKCmXUcXDihaUYi9A/exec',
+  crewUrls:{
+    'A':'https://script.google.com/macros/s/AKfycbySGybq9MaGuUi5SSoNPidkrutr98Iuj8Fu_KGSxM3Igsh2dvqMh2iUASD3Fkjerk-qyQ/exec',
+    'B':'https://script.google.com/macros/s/AKfycbxMwNPDmeF7g3RxWSW32fYnxo7VepUe2IxmGwRK64QUGs3cCnvYt-MWLY7WIct32FBT6Q/exec'
+  },
+  sites:[], crews:[]
+};
 let laborState = { crew:'A', date:'', records:[], advances:[] };
 let expenseState = { hasTax:true, paid:false };
 let rptType = 'site';
 
 function loadCfg() {
-  try { const s=localStorage.getItem('efforte_cost_cfg'); if(s) Object.assign(CFG,JSON.parse(s)); } catch(e){}
+  try {
+    const s=localStorage.getItem('efforte_cost_cfg');
+    if(s){
+      const saved=JSON.parse(s);
+      // 只還原 sites/crews 快取，URL 固定用程式碼內的
+      if(saved.sites&&saved.sites.length) CFG.sites=saved.sites;
+      if(saved.crews&&saved.crews.length) CFG.crews=saved.crews;
+    }
+  } catch(e){}
 }
 function saveCfg() { localStorage.setItem('efforte_cost_cfg',JSON.stringify(CFG)); }
 function dedupSites() {
@@ -664,6 +690,7 @@ async function loadLaborFromCrew() {
     laborState.records=allRecords;
     laborState.advances=allAdvances;
     renderLaborList();
+    renderAdvanceList();
     const adv=laborState.advances.length;
     const dateLabel=startDate===endDate?startDate:`${startDate} ~ ${endDate}`;
     status.textContent=`${dateLabel}｜已載入 ${allRecords.length} 筆出工${adv>0?'、'+adv+' 筆代墊款':''}`;
@@ -709,6 +736,32 @@ function renderLaborList() {
 function updateLaborTotal() {
   const t=laborState.records.reduce((s,r)=>s+r.dailyWage,0);
   document.getElementById('labor-total').textContent=fmt(t);
+}
+
+function renderAdvanceList() {
+  const sec=document.getElementById('advance-section');
+  const list=document.getElementById('advance-list');
+  if (!sec||!list) return;
+  const advs=laborState.advances||[];
+  if (!advs.length) { sec.style.display='none'; return; }
+  sec.style.display='';
+  list.innerHTML=advs.map(adv=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${adv.name}
+          <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px">${adv.date}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${adv.site} ／ ${adv.items||'代買材料'}</div>
+        ${adv.invoice?`<div style="font-size:11px;color:var(--muted)">發票：${adv.invoice}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:14px;font-weight:700">${fmt(adv.amount)}</div>
+        <div style="margin-top:2px">${adv.paid?'<span class="badge paid">已付</span>':'<span class="badge unpaid">未付</span>'}</div>
+      </div>
+    </div>`).join('');
+  // 代墊小計
+  const total=advs.reduce((s,a)=>s+(Number(a.amount)||0),0);
+  list.innerHTML+=`<div style="text-align:right;padding-top:8px;font-size:13px;color:var(--muted)">代墊小計 <strong style="font-size:15px;color:var(--text)">${fmt(total)}</strong></div>`;
 }
 
 async function saveLaborAlloc() {
@@ -1102,3 +1155,4 @@ function errMsg(e) { return `<div class="empty" style="color:var(--danger)">❌ 
 </script>
 </body>
 </html>
+
