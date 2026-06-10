@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工程費用管理系統 — Efforte</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#1D9E75;--green-dk:#0F6E56;--green-lt:#E1F5EE;
+  --bg:#f7f8f9;--white:#fff;--border:#e4e6ea;
+  --text:#1a1a1a;--muted:#6b7280;--danger:#dc2626;--warn:#d97706;
+  --radius:10px;--shadow:0 1px 4px rgba(0,0,0,.08)
+}
+body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
+
+
+/* ── 登入頁 ── */
+.login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-card{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:360px;max-width:90vw;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-logo{font-size:32px;margin-bottom:8px}
+.login-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+.login-divider{border:none;border-top:1px solid var(--border);margin:20px 0}
+.login-error{font-size:12px;color:var(--danger);margin-top:12px;min-height:18px}
+.login-loading{font-size:13px;color:var(--muted);margin-top:12px}
+
+/* ── 版面 ── */
+.shell{display:flex;min-height:100vh}
+.sidebar{width:200px;background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-logo{padding:18px 16px 12px;border-bottom:1px solid var(--border)}
+.sidebar-logo .title{font-size:15px;font-weight:700;color:var(--green)}
+.sidebar-logo .sub{font-size:11px;color:var(--muted);margin-top:2px}
+.sidebar nav{flex:1;padding:10px 0}
+.nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;cursor:pointer;color:var(--muted);font-size:13px;border-left:3px solid transparent;transition:all .15s}
+.nav-item:hover{background:#f3faf7;color:var(--text)}
+.nav-item.active{color:var(--green);font-weight:600;border-left-color:var(--green);background:var(--green-lt)}
+.nav-item .icon{font-size:16px;width:18px;text-align:center}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--white);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:12px}
+.topbar h2{font-size:16px;font-weight:600;flex:1}
+.content{flex:1;padding:20px 24px;overflow-y:auto}
+
+/* ── 元件 ── */
+.card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-body{padding:16px 20px}
+.cards-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.stat-label{font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+.stat-value{font-size:22px;font-weight:700;color:var(--text)}
+.stat-value.warn{color:var(--warn)}
+.stat-value.green{color:var(--green)}
+
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:7px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);font-family:inherit;transition:all .15s}
+.btn:hover{background:#f3f4f6}
+.btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn.primary:hover{background:var(--green-dk)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn.danger{color:var(--danger);border-color:#fca5a5}
+.btn.danger:hover{background:#fef2f2}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.paid{background:#dcfce7;color:#15803d}
+.badge.unpaid{background:#fef9c3;color:#92400e}
+.badge.tax{background:#dbeafe;color:#1e40af}
+.badge.notax{background:#f3f4f6;color:#6b7280}
+.badge.active{background:var(--green-lt);color:var(--green-dk)}
+.badge.done{background:#f3f4f6;color:#6b7280}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#fafafa}
+.tfoot td{font-weight:700;background:#f7f8f9;border-top:1px solid var(--border);border-bottom:none}
+
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-grid.three{grid-template-columns:1fr 1fr 1fr}
+.form-grid.full{grid-template-columns:1fr}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field input,.field select,.field textarea{padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;color:var(--text);background:var(--white)}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(29,158,117,.1)}
+.field textarea{resize:vertical;min-height:64px}
+
+.toggle-group{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.toggle-group button{flex:1;padding:6px 8px;font-size:12px;border:none;cursor:pointer;background:var(--white);color:var(--muted);font-family:inherit;transition:all .15s}
+.toggle-group button.active{background:var(--green);color:#fff;font-weight:600}
+
+.section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-hd h3{font-size:14px;font-weight:600}
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+/* ── 人力費用 ── */
+.labor-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0}
+.labor-row:last-child{border-bottom:none}
+.labor-avatar{width:34px;height:34px;border-radius:50%;background:var(--green-lt);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--green-dk);flex-shrink:0}
+.labor-info{min-width:90px}
+.labor-info .name{font-weight:600;font-size:13px}
+.labor-info .meta{font-size:11px;color:var(--muted);margin-top:1px}
+.labor-site-sel{display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap}
+.site-label{font-size:11px;color:var(--muted);white-space:nowrap}
+.site-select{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text);font-family:inherit;max-width:160px}
+.site-select:focus{outline:none;border-color:var(--green)}
+.labor-wage{font-size:14px;font-weight:700;color:var(--text);min-width:64px;text-align:right}
+
+/* ── 載入狀態 ── */
+.loading-box{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;margin-right:8px;vertical-align:-4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+
+/* ── 提示訊息 ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.success{background:#15803d}
+.toast.error{background:var(--danger)}
+
+/* ── RWD ── */
+@media(max-width:700px){
+  .sidebar{width:56px}
+  .sidebar-logo .title,.sidebar-logo .sub,.nav-item span{display:none}
+  .nav-item{padding:10px;justify-content:center}
+  .content{padding:14px}
+  .form-grid{grid-template-columns:1fr}
+  .form-grid.three{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- 登入畫面 -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">⚙</div>
+    <div class="login-title">工程費用管理系統</div>
+    <div class="login-sub">Efforte Corporation</div>
+    <div id="g_signin_btn"></div>
+    <div class="login-error" id="login-error"></div>
+    <div class="login-loading" id="login-loading" style="display:none"><span class="spinner"></span> 驗證中…</div>
+    <div class="login-divider"></div>
+    <div style="font-size:11px;color:var(--muted)">僅限授權人員登入</div>
+  </div>
+</div>
+
+<div class="shell" id="main-shell" style="display:none">
+  <!-- 側邊欄 -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="title">⚙ 費用管理</div>
+      <div class="sub">Efforte Corporation</div>
+    </div>
+    <nav>
+      <div class="nav-item active" onclick="showPage('dashboard')"><span class="icon">📊</span><span>總覽</span></div>
+      <div class="nav-item" onclick="showPage('labor')"><span class="icon">👷</span><span>人力費用</span></div>
+      <div class="nav-item" onclick="showPage('expense')"><span class="icon">🧾</span><span>案場支出</span></div>
+      <div class="nav-item" onclick="showPage('report')"><span class="icon">📈</span><span>報表</span></div>
+      <div class="nav-item" onclick="showPage('settings')"><span class="icon">⚙</span><span>設定</span></div>
+    </nav>
+  </div>
+
+  <!-- 主區塊 -->
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">總覽</h2>
+      <span id="user-badge" style="font-size:12px;color:var(--muted);margin-right:4px"></span><button class="btn sm" onclick="signOut()" title="登出" style="font-size:12px">登出</button><input type="month" id="global-month" value="" style="font-size:13px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:var(--white);color:var(--text)" onchange="onMonthChange()">
+    </div>
+    <div class="content" id="main-content"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+
+// ════════════════════════════════════════════════
+//  登入驗證
+// ════════════════════════════════════════════════
+const ADMIN_EMAILS = [
+  's986013@gmail.com',
+  'e0938910726@gmail.com',
+  'yuengshih@gmail.com',
+  'daifar168@gmail.com'
+];
+
+let currentUser = null;
+
+window.handleCredentialResponse = function(response) {
+  document.getElementById('login-loading').style.display = '';
+  document.getElementById('login-error').textContent = '';
+  try {
+    // base64url → base64 → UTF-8（支援中文姓名）
+    const base64Url = response.credential.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '=='.slice(0, (4 - base64.length % 4) % 4);
+    const jsonStr = decodeURIComponent(
+      atob(padded).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    );
+    const payload = JSON.parse(jsonStr);
+    const email = (payload.email || '').toLowerCase().trim();
+
+    if (!ADMIN_EMAILS.includes(email)) {
+      document.getElementById('login-loading').style.display = 'none';
+      document.getElementById('login-error').textContent = '❌ 此帳號無存取權限（' + email + '）';
+      return;
+    }
+
+    currentUser = { email, name: payload.name || email };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-shell').style.display = 'flex';
+    document.getElementById('login-loading').style.display = 'none';
+
+    // 更新頂欄顯示名稱
+    const userBadge = document.getElementById('user-badge');
+    if (userBadge) userBadge.textContent = currentUser.name;
+
+    loadCfg();
+    renderDashboard();
+  } catch(err) {
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-error').textContent = '登入解析失敗：' + err.message;
+  }
+};
+
+function initGoogleSignIn() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    setTimeout(initGoogleSignIn, 200);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: '166343824840-ea4pb0vebgv6ofnpjddof5dfva8ro2tl.apps.googleusercontent.com',
+    callback: window.handleCredentialResponse,
+    auto_select: false
+  });
+  google.accounts.id.renderButton(
+    document.getElementById('g_signin_btn'),
+    { theme: 'outline', size: 'large', text: 'signin_with', locale: 'zh_TW', width: 280 }
+  );
+}
+
+// 動態注入 GSI script（避免載入順序問題）
+(function() {
+  const s = document.createElement('script');
+  s.src = 'https://accounts.google.com/gsi/client';
+  s.onload = initGoogleSignIn;
+  document.head.appendChild(s);
+})();
+
+// ════════════════════════════════════════════════
+//  設定區（部署後填入）
+// ════════════════════════════════════════════════
+let CFG = {
+  costUrl: '',       // 費用系統 Apps Script URL
+  crewUrls: {},      // { 'A': '...url...', 'B': '...url...' }
+  sites: [],         // [{siteId, name, status}]
+  crews: []          // [{code, name, url}]
+};
+
+// 從 localStorage 還原設定
+function loadCfg() {
+  try {
+    const saved = localStorage.getItem('efforte_cost_cfg');
+    if (saved) Object.assign(CFG, JSON.parse(saved));
+  } catch(e) {}
+  // 設定本月
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('global-month').value = ym;
+}
+function saveCfg() {
+  localStorage.setItem('efforte_cost_cfg', JSON.stringify(CFG));
+}
+
+// ════════════════════════════════════════════════
+//  API 呼叫
+// ════════════════════════════════════════════════
+async function api(baseUrl, params) {
+  if (!baseUrl) throw new Error('尚未設定 Apps Script URL');
+  const url = baseUrl + '?' + new URLSearchParams(params).toString();
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || '未知錯誤');
+  return data;
+}
+
+async function costApi(params) { return api(CFG.costUrl, params); }
+async function crewApi(crew, params) {
+  const url = CFG.crewUrls[crew] || (CFG.crews.find(c=>c.code===crew)||{}).url || '';
+  return api(url, params);
+}
+
+// ════════════════════════════════════════════════
+//  頁面路由
+// ════════════════════════════════════════════════
+const PAGE_TITLES = { dashboard:'總覽', labor:'人力費用', expense:'案場支出', report:'報表', settings:'設定' };
+let currentPage = 'dashboard';
+
+function showPage(p) {
+  currentPage = p;
+  document.querySelectorAll('.nav-item').forEach((el,i)=>{
+    el.classList.toggle('active', el.getAttribute('onclick').includes("'"+p+"'"));
+  });
+  document.getElementById('page-title').textContent = PAGE_TITLES[p];
+  const content = document.getElementById('main-content');
+  content.innerHTML = '<div class="loading-box"><span class="spinner"></span>載入中…</div>';
+  const renders = { dashboard:renderDashboard, labor:renderLabor, expense:renderExpense, report:renderReport, settings:renderSettings };
+  renders[p]();
+}
+
+function onMonthChange() { if(currentPage==='dashboard'||currentPage==='report') showPage(currentPage); }
+function getMonth() { return document.getElementById('global-month').value; }
+
+// ════════════════════════════════════════════════
+//  總覽
+// ════════════════════════════════════════════════
+async function renderDashboard() {
+  const c = document.getElementById('main-content');
+  if (!CFG.costUrl) { c.innerHTML = noUrlMsg(); return; }
+  try {
+    const d = await costApi({ action:'getDashboard', month: getMonth() });
+    const s = d.summary;
+    const sitesHtml = Object.entries(d.bySite||{}).map(([name,v])=>`
+      <tr>
+        <td>${name}</td>
+        <td>${fmt(v.labor)}</td>
+        <td>${fmt(v.expense - v.labor < 0 ? 0 : v.expense)}</td>
+        <td>${fmt(v.labor + v.expense)}</td>
+        <td>${v.unpaid > 0 ? `<span class="badge unpaid">${fmt(v.unpaid)}</span>` : '<span class="badge paid">已結清</span>'}</td>
+      </tr>`).join('');
+    c.innerHTML = `
+      <div class="cards-row">
+        <div class="stat-card"><div class="stat-label">本月人力費用</div><div class="stat-value green">${fmt(s.totalLabor)}</div></div>
+        <div class="stat-card"><div class="stat-label">本月案場支出</div><div class="stat-value">${fmt(s.totalExpense)}</div></div>
+        <div class="stat-card"><div class="stat-label">含稅發票金額</div><div class="stat-value">${fmt(s.totalTax)}</div></div>
+        <div class="stat-card"><div class="stat-label">未付款項</div><div class="stat-value warn">${fmt(s.totalUnpaid)}</div></div>
+      </div>
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>各案場本月費用</h3></div>
+        <table><thead><tr><th>案場</th><th>人力費</th><th>材料/其他</th><th>合計</th><th>未付</th></tr></thead>
+        <tbody>${sitesHtml || '<tr><td colspan="5" class="empty">本月尚無資料</td></tr>'}</tbody></table>
+      </div></div>`;
+  } catch(e) { c.innerHTML = errMsg(e); }
+}
+
+// ════════════════════════════════════════════════
+//  人力費用
+// ════════════════════════════════════════════════
+let laborState = { crew:'A', date:'', records:[], sites:[] };
+
+async function renderLabor() {
+  const today = new Date().toISOString().slice(0,10);
+  laborState.date = laborState.date || today;
+  laborState.sites = CFG.sites.length ? CFG.sites : [];
+
+  const c = document.getElementById('main-content');
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="section-hd" style="margin-bottom:14px">
+        <h3>選擇工班與日期</h3>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>日期</label>
+          <input type="date" id="labor-date" value="${laborState.date}" onchange="laborState.date=this.value">
+        </div>
+        <div class="field"><label>工班</label>
+          <div class="toggle-group" id="crew-toggle">${buildCrewToggle()}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn primary" onclick="loadLaborFromCrew()">⬇ 從打卡系統載入</button>
+        <span id="labor-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div></div>
+
+    <div class="card" id="labor-card" style="display:none"><div class="card-body">
+      <div class="section-hd">
+        <h3>人力分配</h3>
+        <span style="font-size:12px;color:var(--muted)">可手動調整各人員歸屬案場</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:var(--green-lt);border-radius:6px;color:var(--green-dk)">
+        ℹ 若工班當日上午/下午在不同案場，請分別選擇，費用將自動各拆一半
+      </div>
+      <div id="labor-list"></div>
+      <hr class="divider">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:13px;color:var(--muted)">本日人力小計：<strong id="labor-total" style="color:var(--text);font-size:16px">$0</strong></div>
+        <button class="btn primary" onclick="saveLaborAlloc()">💾 儲存分配</button>
+      </div>
+    </div></div>`;
+}
+
+function buildCrewToggle() {
+  const crews = CFG.crews.length ? CFG.crews : [{code:'A',name:'A工班'},{code:'B',name:'B工班'}];
+  return crews.map(c=>`<button id="crew-btn-${c.code}" class="${laborState.crew===c.code?'active':''}" onclick="selectCrew('${c.code}')">${c.name||c.code+'工班'}</button>`).join('');
+}
+
+function selectCrew(code) {
+  laborState.crew = code;
+  document.querySelectorAll('#crew-toggle button').forEach(b=>{
+    b.classList.toggle('active', b.id === 'crew-btn-'+code);
+  });
+}
+
+async function loadLaborFromCrew() {
+  const date = document.getElementById('labor-date').value;
+  laborState.date = date;
+  if (!date) { toast('請選擇日期','error'); return; }
+  const crew = laborState.crew;
+  const url = CFG.crewUrls[crew] || (CFG.crews.find(c=>c.code===crew)||{}).url || '';
+  if (!url) { toast(crew+'工班尚未設定 URL，請先到設定頁填入','error'); return; }
+
+  const status = document.getElementById('labor-status');
+  status.innerHTML = '<span class="spinner"></span>載入中…';
+
+  try {
+    const [data, advData] = await Promise.all([
+      crewApi(crew, { action:'getLaborByDate', date }),
+      crewApi(crew, { action:'getAdvancePayments', startDate:date, endDate:date })
+    ]);
+    laborState.records = data.records || [];
+    laborState.advances = advData.records || [];
+    renderLaborList();
+    const advCount = laborState.advances.length;
+    status.textContent = `已載入 ${laborState.records.length} 筆出工${advCount > 0 ? '、' + advCount + ' 筆代墊款' : ''}`;
+    document.getElementById('labor-card').style.display = '';
+    if (laborState.records.length === 0) toast('該日無出工記錄');
+  } catch(e) {
+    status.textContent = '';
+    toast('載入失敗：'+e.message,'error');
+  }
+}
+
+function renderLaborList() {
+  const siteOpts = buildSiteOpts();
+  const list = document.getElementById('labor-list');
+  if (!laborState.records.length) {
+    list.innerHTML = '<div class="empty">該日無出工紀錄</div>'; updateLaborTotal(); return;
+  }
+  list.innerHTML = laborState.records.map((r,i)=>`
+    <div class="labor-row">
+      <div class="labor-avatar">${r.name.slice(0,1)}</div>
+      <div class="labor-info">
+        <div class="name">${r.name}</div>
+        <div class="meta">${r.timeIn||'--:--'} – ${r.timeOut||'未下班'}</div>
+      </div>
+      <div class="labor-site-sel">
+        <span class="site-label">上午</span>
+        <select class="site-select" id="am-${i}" onchange="updateLaborTotal()">
+          <option value="">— 未分配 —</option>${siteOpts(r.site)}
+        </select>
+        <span class="site-label">下午</span>
+        <select class="site-select" id="pm-${i}" onchange="updateLaborTotal()">
+          <option value="">— 同上午 —</option>${siteOpts('')}
+        </select>
+      </div>
+      <div class="labor-wage">${fmt(r.dailyWage)}</div>
+    </div>`).join('');
+  updateLaborTotal();
+}
+
+function buildSiteOpts() {
+  const sites = CFG.sites.filter(s=>s.status==='進行中'||s.status==='active');
+  return (defaultSite) => sites.map(s=>`<option value="${s.name}" ${s.name===defaultSite?'selected':''}>${s.name}</option>`).join('');
+}
+
+function updateLaborTotal() {
+  const total = laborState.records.reduce((s,r)=>s+r.dailyWage,0);
+  document.getElementById('labor-total').textContent = fmt(total);
+}
+
+async function saveLaborAlloc() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const allocs = laborState.records.map((r,i)=>({
+    empId: r.empId, name: r.name, dailyWage: r.dailyWage,
+    amSite: document.getElementById('am-'+i)?.value || '',
+    pmSite: document.getElementById('pm-'+i)?.value || ''
+  }));
+  try {
+    await costApi({ action:'saveLaborAlloc', date:laborState.date, crew:laborState.crew, allocations:JSON.stringify(allocs) });
+    toast('人力分配已儲存','success');
+
+    // 同步代墊款到費用系統
+    const advances = laborState.advances || [];
+    if (advances.length > 0) {
+      let synced = 0, skipped = 0;
+      for (const adv of advances) {
+        try {
+          const r = await costApi({
+            action: 'addExpense',
+            date: adv.date,
+            siteId: '',
+            siteName: adv.site,
+            vendor: adv.name + '（代墊）',
+            desc: adv.items || '代買材料',
+            amount: adv.amount,
+            hasTax: adv.invoice ? 'true' : 'false',
+            paid: adv.paid ? 'true' : 'false',
+            paidDate: adv.payDate || '',
+            note: adv.invoice ? '發票：' + adv.invoice : '無發票',
+            sourceType: 'advance',
+            sourceRecordId: adv.recordId
+          });
+          if (r.skipped) skipped++; else synced++;
+        } catch(e) { /* 單筆失敗不中斷 */ }
+      }
+      const msg = synced > 0 ? `已同步 ${synced} 筆代墊款` + (skipped > 0 ? `（${skipped} 筆已存在略過）` : '') : `代墊款已全部存在，略過`;
+      setTimeout(()=>toast(msg,'success'), 800);
+    }
+  } catch(e) { toast('儲存失敗：'+e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════
+//  案場支出
+// ════════════════════════════════════════════════
+let expenseState = { hasTax:true, paid:false, expenses:[] };
+
+async function renderExpense() {
+  const c = document.getElementById('main-content');
+  const siteOpts = CFG.sites.map(s=>`<option value="${s.siteId}|${s.name}">${s.name}</option>`).join('');
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="section-hd"><h3>新增支出紀錄</h3></div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="field"><label>案場</label>
+          <select id="exp-site">${siteOpts||'<option>請先在設定頁新增案場</option>'}</select></div>
+        <div class="field"><label>日期</label>
+          <input type="date" id="exp-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="field"><label>廠商／供應商</label><input type="text" id="exp-vendor" placeholder="例：大成五金"></div>
+        <div class="field"><label>品項說明</label><input type="text" id="exp-desc" placeholder="例：防水PU材料、鷹架租金…"></div>
+      </div>
+      <div class="form-grid three" style="margin-bottom:12px">
+        <div class="field"><label>金額（元）</label><input type="number" id="exp-amount" placeholder="0" min="0"></div>
+        <div class="field"><label>發票狀態</label>
+          <div class="toggle-group">
+            <button id="btn-tax" class="active" onclick="setTax(true)">含稅開發票</button>
+            <button id="btn-notax" onclick="setTax(false)">未稅無發票</button>
+          </div></div>
+        <div class="field"><label>付款狀態</label>
+          <div class="toggle-group">
+            <button id="btn-paid" onclick="setPaid(true)">已付</button>
+            <button id="btn-unpaid" class="active" onclick="setPaid(false)">未付</button>
+          </div></div>
+      </div>
+      <div class="form-grid full" style="margin-bottom:12px">
+        <div class="field"><label>備註（選填）</label><textarea id="exp-note" placeholder=""></textarea></div>
+      </div>
+      <div style="text-align:right">
+        <button class="btn primary" onclick="submitExpense()">＋ 新增紀錄</button>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <div class="section-hd">
+        <h3>支出明細</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="filter-site" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px" onchange="loadExpenses()">
+            <option value="">所有案場</option>${siteOpts}
+          </select>
+          <select id="filter-paid" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px" onchange="loadExpenses()">
+            <option value="">全部</option><option value="未付">未付</option><option value="已付">已付</option>
+          </select>
+        </div>
+      </div>
+      <div id="expense-table-wrap"><div class="loading-box"><span class="spinner"></span>載入中…</div></div>
+    </div></div>`;
+  loadExpenses();
+}
+
+function setTax(v) {
+  expenseState.hasTax = v;
+  document.getElementById('btn-tax').classList.toggle('active',v);
+  document.getElementById('btn-notax').classList.toggle('active',!v);
+}
+function setPaid(v) {
+  expenseState.paid = v;
+  document.getElementById('btn-paid').classList.toggle('active',v);
+  document.getElementById('btn-unpaid').classList.toggle('active',!v);
+}
+
+async function submitExpense() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const siteVal = document.getElementById('exp-site').value;
+  const [siteId, siteName] = siteVal.includes('|') ? siteVal.split('|') : ['', siteVal];
+  const amount = document.getElementById('exp-amount').value;
+  const vendor = document.getElementById('exp-vendor').value.trim();
+  const desc = document.getElementById('exp-desc').value.trim();
+  if (!vendor || !desc || !amount) { toast('請填寫廠商、品項與金額','error'); return; }
+  try {
+    await costApi({
+      action:'addExpense',
+      date: document.getElementById('exp-date').value,
+      siteId, siteName,
+      vendor, desc, amount,
+      hasTax: expenseState.hasTax,
+      paid: expenseState.paid,
+      note: document.getElementById('exp-note').value
+    });
+    document.getElementById('exp-vendor').value='';
+    document.getElementById('exp-desc').value='';
+    document.getElementById('exp-amount').value='';
+    document.getElementById('exp-note').value='';
+    toast('已新增支出紀錄','success');
+    loadExpenses();
+  } catch(e) { toast('新增失敗：'+e.message,'error'); }
+}
+
+async function loadExpenses() {
+  if (!CFG.costUrl) { document.getElementById('expense-table-wrap').innerHTML = noUrlMsg(); return; }
+  const wrap = document.getElementById('expense-table-wrap');
+  wrap.innerHTML = '<div class="loading-box"><span class="spinner"></span>載入中…</div>';
+  try {
+    const month = getMonth();
+    const siteFilter = document.getElementById('filter-site')?.value || '';
+    const paidFilter = document.getElementById('filter-paid')?.value || '';
+    const [siteId] = siteFilter.includes('|') ? siteFilter.split('|') : ['', siteFilter];
+    const data = await costApi({
+      action:'getExpenses',
+      startDate: month+'-01', endDate: month+'-31',
+      siteId, paid: paidFilter
+    });
+    const rows = data.expenses || [];
+    if (!rows.length) { wrap.innerHTML = '<div class="empty">本月無支出紀錄</div>'; return; }
+    const total = rows.reduce((s,r)=>s+(Number(r['金額'])||0),0);
+    wrap.innerHTML = `
+      <table>
+        <thead><tr><th>日期</th><th>案場</th><th>廠商</th><th>品項</th><th style="text-align:right">金額</th><th>發票</th><th>付款</th><th></th></tr></thead>
+        <tbody>${rows.map(r=>`
+          <tr>
+            <td>${r['日期'].slice(5)}</td>
+            <td>${r['案場名稱']}</td>
+            <td>${r['廠商名稱']}</td>
+            <td>${r['品項說明']}</td>
+            <td style="text-align:right;font-weight:600">${fmt(r['金額'])}</td>
+            <td>${r['含稅']==='是'?'<span class="badge tax">含稅</span>':'<span class="badge notax">無發票</span>'}</td>
+            <td>${r['付款狀態']==='已付'?'<span class="badge paid">已付</span>':'<span class="badge unpaid">未付</span>'}</td>
+            <td>
+              ${r['付款狀態']==='未付'?`<button class="btn sm" onclick="markPaid('${r['記錄ID']}')">標記已付</button>`:''}
+              <button class="btn sm danger" onclick="deleteExp('${r['記錄ID']}')">✕</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td colspan="4" style="text-align:right">合計</td><td style="text-align:right">${fmt(total)}</td><td colspan="3"></td></tr></tfoot>
+      </table>`;
+  } catch(e) { wrap.innerHTML = errMsg(e); }
+}
+
+async function markPaid(id) {
+  try {
+    await costApi({ action:'updateExpense', expenseId:id, paid:'true', paidDate:new Date().toISOString().slice(0,10) });
+    toast('已標記付款','success'); loadExpenses();
+  } catch(e) { toast('操作失敗','error'); }
+}
+
+async function deleteExp(id) {
+  if (!confirm('確定刪除此筆支出？')) return;
+  try {
+    await costApi({ action:'deleteExpense', expenseId:id });
+    toast('已刪除','success'); loadExpenses();
+  } catch(e) { toast('刪除失敗','error'); }
+}
+
+// ════════════════════════════════════════════════
+//  報表
+// ════════════════════════════════════════════════
+async function renderReport() {
+  const c = document.getElementById('main-content');
+  const month = getMonth();
+  const siteOpts = '<option value="">所有案場</option>'+CFG.sites.map(s=>`<option value="${s.siteId}|${s.name}">${s.name}</option>`).join('');
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="form-grid">
+        <div class="field"><label>篩選案場</label>
+          <select id="rpt-site">${siteOpts}</select></div>
+        <div class="field"><label>報表類型</label>
+          <div class="toggle-group">
+            <button id="rpt-type-site" class="active" onclick="setRptType('site')">依案場</button>
+            <button id="rpt-type-date" onclick="setRptType('date')">依日期</button>
+            <button id="rpt-type-month" onclick="setRptType('month')">月結</button>
+          </div></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn primary" onclick="loadReport()">產生報表</button>
+        <button class="btn" onclick="exportCsv()">⬇ 匯出 CSV</button>
+      </div>
+    </div></div>
+    <div id="report-area"><div class="empty">請選擇條件後點「產生報表」</div></div>`;
+}
+
+let rptType = 'site';
+function setRptType(t) {
+  rptType = t;
+  ['site','date','month'].forEach(k=>document.getElementById('rpt-type-'+k)?.classList.toggle('active',k===t));
+}
+
+async function loadReport() {
+  if (!CFG.costUrl) { document.getElementById('report-area').innerHTML = noUrlMsg(); return; }
+  const area = document.getElementById('report-area');
+  area.innerHTML = '<div class="loading-box"><span class="spinner"></span>計算中…</div>';
+  try {
+    const month = getMonth();
+    const siteVal = document.getElementById('rpt-site').value;
+    const [siteId] = siteVal.includes('|') ? siteVal.split('|') : ['',''];
+    const data = await costApi({ action:'getReport', startDate:month+'-01', endDate:month+'-31', siteId });
+    const expenses = data.expenses || [];
+    const labor = data.labor || [];
+
+    if (rptType === 'site') {
+      const map = {};
+      labor.forEach(r=>{
+        const addAmt = (site, amt) => {
+          if (!site) return;
+          if (!map[site]) map[site]={labor:0,expense:0,unpaid:0,tax:0};
+          map[site].labor += Number(amt)||0;
+        };
+        addAmt(r['上午案場'], r['上午金額']);
+        addAmt(r['下午案場'], r['下午金額']);
+      });
+      expenses.forEach(r=>{
+        const s = r['案場名稱']||'未分類';
+        if (!map[s]) map[s]={labor:0,expense:0,unpaid:0,tax:0};
+        map[s].expense += Number(r['金額'])||0;
+        if (r['付款狀態']==='未付') map[s].unpaid += Number(r['金額'])||0;
+        if (r['含稅']==='是') map[s].tax += Number(r['金額'])||0;
+      });
+      const rows = Object.entries(map);
+      const totals = rows.reduce((s,[,v])=>({labor:s.labor+v.labor,expense:s.expense+v.expense,unpaid:s.unpaid+v.unpaid,tax:s.tax+v.tax}),{labor:0,expense:0,unpaid:0,tax:0});
+      area.innerHTML = `<div class="card"><div class="card-body">
+        <h3 style="margin-bottom:12px">依案場彙總 — ${month}</h3>
+        <table><thead><tr><th>案場</th><th>人力費</th><th>支出費</th><th>含稅金額</th><th>未付</th><th>合計</th></tr></thead>
+        <tbody>${rows.map(([name,v])=>`<tr>
+          <td>${name}</td><td>${fmt(v.labor)}</td><td>${fmt(v.expense)}</td>
+          <td>${fmt(v.tax)}</td>
+          <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'—'}</td>
+          <td style="font-weight:700">${fmt(v.labor+v.expense)}</td></tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td>合計</td><td>${fmt(totals.labor)}</td><td>${fmt(totals.expense)}</td>
+          <td>${fmt(totals.tax)}</td><td>${fmt(totals.unpaid)}</td>
+          <td>${fmt(totals.labor+totals.expense)}</td></tr></tfoot>
+        </table></div></div>`;
+
+    } else if (rptType === 'date') {
+      const byDate = {};
+      expenses.forEach(r=>{ const d=r['日期']; if(!byDate[d])byDate[d]={expense:0,count:0}; byDate[d].expense+=Number(r['金額'])||0; byDate[d].count++; });
+      labor.forEach(r=>{ const d=r['日期']; if(!byDate[d])byDate[d]={expense:0,count:0}; byDate[d].labor=(byDate[d].labor||0)+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0); });
+      const rows = Object.entries(byDate).sort((a,b)=>a[0]<b[0]?-1:1);
+      area.innerHTML = `<div class="card"><div class="card-body">
+        <h3 style="margin-bottom:12px">依日期明細 — ${month}</h3>
+        <table><thead><tr><th>日期</th><th>人力費</th><th>支出費</th><th>筆數</th><th>小計</th></tr></thead>
+        <tbody>${rows.map(([d,v])=>`<tr><td>${d}</td><td>${fmt(v.labor||0)}</td><td>${fmt(v.expense)}</td><td>${v.count}</td><td style="font-weight:700">${fmt((v.labor||0)+v.expense)}</td></tr>`).join('')}</tbody>
+        </table></div></div>`;
+
+    } else {
+      const totalLabor = labor.reduce((s,r)=>s+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
+      const totalExp = expenses.reduce((s,r)=>s+(Number(r['金額'])||0),0);
+      const totalUnpaid = expenses.filter(r=>r['付款狀態']==='未付').reduce((s,r)=>s+(Number(r['金額'])||0),0);
+      const totalTax = expenses.filter(r=>r['含稅']==='是').reduce((s,r)=>s+(Number(r['金額'])||0),0);
+      area.innerHTML = `<div class="card"><div class="card-body">
+        <h3 style="margin-bottom:16px">月結報表 — ${month}</h3>
+        <div class="cards-row">
+          <div class="stat-card"><div class="stat-label">人力費用合計</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
+          <div class="stat-card"><div class="stat-label">案場支出合計</div><div class="stat-value">${fmt(totalExp)}</div></div>
+          <div class="stat-card"><div class="stat-label">含稅發票</div><div class="stat-value">${fmt(totalTax)}</div></div>
+          <div class="stat-card"><div class="stat-label">未付款項</div><div class="stat-value warn">${fmt(totalUnpaid)}</div></div>
+        </div>
+        <div style="font-size:15px;font-weight:700;margin-top:8px;padding:12px 16px;background:var(--green-lt);border-radius:8px;color:var(--green-dk)">
+          本月總費用：${fmt(totalLabor+totalExp)}
+        </div>
+      </div></div>`;
+    }
+  } catch(e) { document.getElementById('report-area').innerHTML = errMsg(e); }
+}
+
+function exportCsv() { toast('請直接從 Google Sheets 下載 CSV（試算表 → 檔案 → 下載）'); }
+
+// ════════════════════════════════════════════════
+//  設定
+// ════════════════════════════════════════════════
+function renderSettings() {
+  const c = document.getElementById('main-content');
+  const crewRows = (CFG.crews.length ? CFG.crews : [{code:'A',name:'A工班',url:''},{code:'B',name:'B工班',url:''}])
+    .map(cr=>`
+      <div class="form-grid" style="margin-bottom:10px;align-items:end">
+        <div class="field"><label>${cr.name||cr.code+'工班'} 打卡系統 URL</label>
+          <input type="text" id="crew-url-${cr.code}" value="${CFG.crewUrls[cr.code]||cr.url||''}" placeholder="https://script.google.com/macros/s/…/exec">
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm" onclick="testCrewUrl('${cr.code}')">測試</button>
+          <button class="btn sm primary" onclick="saveCrewUrl('${cr.code}')">儲存</button>
+        </div>
+      </div>`).join('');
+
+  const siteRows = CFG.sites.map(s=>`
+    <div class="labor-row" style="display:flex;align-items:center;gap:10px">
+      <div style="flex:1;font-weight:600;font-size:13px">${s.name}</div>
+      <span class="badge ${s.status==='進行中'?'active':'done'}">${s.status}</span>
+      <button class="btn sm" onclick="toggleSiteStatus('${s.siteId}','${s.status}')">${s.status==='進行中'?'標記完工':'重新啟用'}</button>
+    </div>`).join('');
+
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="section-hd"><h3>費用系統 Apps Script URL</h3></div>
+      <div class="form-grid" style="margin-bottom:10px;align-items:end">
+        <div class="field"><label>費用系統後端 URL</label>
+          <input type="text" id="cost-url" value="${CFG.costUrl||''}" placeholder="https://script.google.com/macros/s/…/exec">
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm" onclick="testCostUrl()">測試連線</button>
+          <button class="btn sm primary" onclick="saveCostUrl()">儲存</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="section-hd"><h3>工班打卡系統連結</h3><button class="btn sm" onclick="addCrew()">＋ 新增工班</button></div>
+      <div id="crew-setting-rows">${crewRows}</div>
+    </div></div>
+
+    <div class="card" style="margin-bottom:16px"><div class="card-body">
+      <div class="section-hd"><h3>案場管理</h3></div>
+      <div id="site-list" style="margin-bottom:12px">${siteRows||'<div class="empty">尚無案場</div>'}</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="new-site-name" placeholder="輸入新案場名稱" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px">
+        <button class="btn primary" onclick="addSite()">＋ 新增</button>
+      </div>
+    </div></div>`;
+}
+
+async function saveCostUrl() {
+  CFG.costUrl = document.getElementById('cost-url').value.trim();
+  saveCfg();
+  toast('費用系統 URL 已儲存','success');
+  // 從後端載入案場與工班設定
+  try {
+    const d = await costApi({ action:'getSites' });
+    CFG.sites = (d.sites||[]).map(s=>({siteId:s['案場ID'],name:s['案場名稱'],status:s['狀態']}));
+    const d2 = await costApi({ action:'getCrews' });
+    CFG.crews = (d2.crews||[]).map(c=>({code:c['工班代號'],name:c['工班名稱'],url:c['Apps Script URL']}));
+    d2.crews.forEach(c=>{ if(c['Apps Script URL']) CFG.crewUrls[c['工班代號']]=c['Apps Script URL']; });
+    saveCfg();
+    toast('已同步案場與工班資料','success');
+  } catch(e) {}
+}
+
+async function testCostUrl() {
+  const url = document.getElementById('cost-url').value.trim();
+  if (!url) { toast('請先輸入 URL','error'); return; }
+  try {
+    const r = await api(url, { action:'' });
+    toast('連線成功：'+r.message,'success');
+  } catch(e) { toast('連線失敗：'+e.message,'error'); }
+}
+
+async function saveCrewUrl(code) {
+  const url = document.getElementById('crew-url-'+code)?.value.trim() || '';
+  CFG.crewUrls[code] = url;
+  saveCfg();
+  if (CFG.costUrl) {
+    try {
+      await costApi({ action:'saveCrewUrl', crew:code, url });
+    } catch(e) {}
+  }
+  toast(code+'工班 URL 已儲存','success');
+}
+
+async function testCrewUrl(code) {
+  const url = document.getElementById('crew-url-'+code)?.value.trim() || '';
+  if (!url) { toast('請先輸入 URL','error'); return; }
+  try {
+    const r = await api(url, { action:'getEmployees' });
+    toast(`連線成功，共 ${r.employees?.length||0} 位員工`,'success');
+  } catch(e) { toast('連線失敗：'+e.message,'error'); }
+}
+
+function addCrew() {
+  const code = prompt('輸入工班代號（如：C）');
+  if (!code) return;
+  const name = prompt('工班名稱（如：C工班）') || code+'工班';
+  if (CFG.crews.find(c=>c.code===code)) { toast('此工班代號已存在','error'); return; }
+  CFG.crews.push({ code, name, url:'' });
+  saveCfg();
+  renderSettings();
+  toast(name+' 已新增','success');
+}
+
+async function addSite() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const name = document.getElementById('new-site-name').value.trim();
+  if (!name) return;
+  try {
+    const r = await costApi({ action:'addSite', name });
+    CFG.sites.push({ siteId:r.siteId, name, status:'進行中' });
+    saveCfg();
+    toast('案場已新增','success');
+    renderSettings();
+  } catch(e) { toast('新增失敗：'+e.message,'error'); }
+}
+
+async function toggleSiteStatus(siteId, current) {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const newStatus = current==='進行中' ? '已完工' : '進行中';
+  try {
+    await costApi({ action:'updateSite', siteId, status:newStatus });
+    const site = CFG.sites.find(s=>s.siteId===siteId);
+    if (site) site.status = newStatus;
+    saveCfg();
+    renderSettings();
+  } catch(e) { toast('更新失敗','error'); }
+}
+
+// ════════════════════════════════════════════════
+//  工具函式
+// ════════════════════════════════════════════════
+function fmt(v) {
+  const n = Number(v) || 0;
+  return '$' + n.toLocaleString('zh-TW');
+}
+
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type?' '+type:'');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+function noUrlMsg() {
+  return `<div class="empty" style="padding:40px">
+    ⚙ 尚未設定費用系統 URL<br>
+    <span style="font-size:12px">請先到「設定」頁面填入 Apps Script URL</span>
+  </div>`;
+}
+
+function errMsg(e) {
+  return `<div class="empty" style="color:var(--danger)">❌ 載入失敗：${e.message}</div>`;
+}
+
+// ════════════════════════════════════════════════
+//  登出
+// ════════════════════════════════════════════════
+function signOut() {
+  if (!confirm('確定要登出嗎？')) return;
+  if (typeof google !== 'undefined' && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
+  currentUser = null;
+  document.getElementById('main-shell').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-error').textContent = '';
+}
+</script>
+</body>
+</html>
