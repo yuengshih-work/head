@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>工程費用管理 — Efforte</title>
+<title>平安住工程費用管理 — Efforte</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -180,13 +180,14 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
     <div id="page-labor" class="page">
       <div class="card"><div class="card-body">
         <div class="section-hd"><h3>載入出工資料</h3></div>
-        <div class="form-row" style="margin-bottom:10px">
-          <div class="field" style="margin:0"><label>日期</label>
-            <input type="date" id="labor-date">
-          </div>
-          <div class="field" style="margin:0"><label>工班</label>
-            <div class="toggle-grp" id="crew-toggle"></div>
-          </div>
+        <div class="field" style="margin-bottom:10px"><label>工班</label>
+          <div class="toggle-grp" id="crew-toggle"></div>
+        </div>
+        <div class="quick-btns" id="labor-quick"></div>
+        <div class="date-range" style="margin-bottom:10px">
+          <input type="date" id="labor-start">
+          <span>至</span>
+          <input type="date" id="labor-end">
         </div>
         <button class="btn primary full" onclick="loadLaborFromCrew()">⬇ 從打卡系統載入</button>
         <div id="labor-status" style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center"></div>
@@ -369,7 +370,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -431,6 +432,10 @@ function loadCfg() {
   try { const s=localStorage.getItem('efforte_cost_cfg'); if(s) Object.assign(CFG,JSON.parse(s)); } catch(e){}
 }
 function saveCfg() { localStorage.setItem('efforte_cost_cfg',JSON.stringify(CFG)); }
+function dedupSites() {
+  const seen=new Set();
+  CFG.sites=CFG.sites.filter(s=>{ if(seen.has(s.name)) return false; seen.add(s.name); return true; });
+}
 
 // ═══════════════════════════════════════
 //  日期工具
@@ -514,13 +519,13 @@ async function initApp() {
   // 預設日期
   const t=today();
   const {s,e}=thisMonth();
-  document.getElementById('labor-date').value=t;
-  ['dash','exp','rpt'].forEach(pfx=>{ setDateRange(pfx+'-start',pfx+'-end',s,e); });
+  ['dash','labor','exp','rpt'].forEach(pfx=>{ setDateRange(pfx+'-start',pfx+'-end',s,e); });
   buildCrewToggleUI();
   if (CFG.costUrl) {
     try {
       const d=await costApi({action:'getSites'});
       CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態']}));
+      dedupSites();
       const d2=await costApi({action:'getCrews'});
       CFG.crews=d2.crews||[];
       CFG.crews.forEach(c=>{ if(c['Apps Script URL']) CFG.crewUrls[c['工班代號']]=c['Apps Script URL']; });
@@ -529,6 +534,7 @@ async function initApp() {
   }
   buildAllSiteSelects();
   buildQuickBtns('dash-quick','dash-start','dash-end',loadDashboard);
+  buildQuickBtns('labor-quick','labor-start','labor-end');
   buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
   buildQuickBtns('rpt-quick','rpt-start','rpt-end');
   renderDashboard();
@@ -607,6 +613,7 @@ async function loadDashboard() {
 // ═══════════════════════════════════════
 function renderLabor() {
   buildCrewToggleUI();
+  buildQuickBtns('labor-quick','labor-start','labor-end');
 }
 
 function buildCrewToggleUI() {
@@ -622,26 +629,46 @@ function selectCrew(code) {
 }
 
 async function loadLaborFromCrew() {
-  const date=document.getElementById('labor-date').value;
-  if (!date) { toast('請選擇日期','error'); return; }
-  laborState.date=date;
+  const startDate=document.getElementById('labor-start').value;
+  const endDate=document.getElementById('labor-end').value;
+  if (!startDate||!endDate) { toast('請選擇日期區間','error'); return; }
+  laborState.startDate=startDate;
+  laborState.endDate=endDate;
+  // 仍保留 date 供舊邏輯相容
+  laborState.date=startDate;
   const crew=laborState.crew;
   const url=CFG.crewUrls[crew]||(CFG.crews.find(c=>c['工班代號']===crew)||{})['Apps Script URL']||'';
   if (!url) { toast(crew+'工班尚未設定 URL','error'); return; }
   const status=document.getElementById('labor-status');
   status.innerHTML='<span class="spinner"></span>載入中…';
   try {
-    const [d,advD]=await Promise.all([
-      crewApi(crew,{action:'getLaborByDate',date}),
-      crewApi(crew,{action:'getAdvancePayments',startDate:date,endDate:date})
-    ]);
-    laborState.records=d.records||[];
-    laborState.advances=advD.records||[];
+    // 逐日產生日期清單
+    const dates=[];
+    let cur=new Date(startDate);
+    const end=new Date(endDate);
+    while(cur<=end){ dates.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+
+    // 對每一天並行抓資料
+    const results=await Promise.all(dates.map(d=>Promise.all([
+      crewApi(crew,{action:'getLaborByDate',date:d}).catch(()=>({records:[]})),
+      crewApi(crew,{action:'getAdvancePayments',startDate:d,endDate:d}).catch(()=>({records:[]}))
+    ])));
+
+    // 合併所有日期的記錄
+    const allRecords=[], allAdvances=[];
+    results.forEach(([d,adv],i)=>{
+      (d.records||[]).forEach(r=>{ r._date=dates[i]; allRecords.push(r); });
+      (adv.records||[]).forEach(r=>allAdvances.push(r));
+    });
+
+    laborState.records=allRecords;
+    laborState.advances=allAdvances;
     renderLaborList();
     const adv=laborState.advances.length;
-    status.textContent=`已載入 ${laborState.records.length} 筆出工${adv>0?'、'+adv+' 筆代墊款':''}`;
+    const dateLabel=startDate===endDate?startDate:`${startDate} ~ ${endDate}`;
+    status.textContent=`${dateLabel}｜已載入 ${allRecords.length} 筆出工${adv>0?'、'+adv+' 筆代墊款':''}`;
     document.getElementById('labor-card').style.display='';
-    if (!laborState.records.length) toast('該日無出工記錄');
+    if (!allRecords.length) toast('該期間無出工記錄');
   } catch(err) {
     status.textContent='';
     toast('載入失敗：'+err.message,'error');
@@ -658,7 +685,7 @@ function renderLaborList() {
       <div class="labor-top">
         <div class="labor-avatar">${r.name.slice(0,1)}</div>
         <div>
-          <div class="labor-name">${r.name}</div>
+          <div class="labor-name">${r.name} <span style="font-size:11px;color:var(--muted);font-weight:400">${r._date||''}</span></div>
           <div class="labor-meta">${r.timeIn||'--:--'} – ${r.timeOut||'未下班'}</div>
         </div>
         <div class="labor-wage">${fmt(r.dailyWage)}</div>
@@ -686,13 +713,21 @@ function updateLaborTotal() {
 
 async function saveLaborAlloc() {
   if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
-  const allocs=laborState.records.map((r,i)=>({
-    empId:r.empId, name:r.name, dailyWage:r.dailyWage,
-    amSite:document.getElementById('am-'+i)?.value||'',
-    pmSite:document.getElementById('pm-'+i)?.value||''
-  }));
+  // 依日期分組，每日各自儲存
+  const byDate={};
+  laborState.records.forEach((r,i)=>{
+    const d=r._date||laborState.date;
+    if(!byDate[d]) byDate[d]=[];
+    byDate[d].push({
+      empId:r.empId, name:r.name, dailyWage:r.dailyWage,
+      amSite:document.getElementById('am-'+i)?.value||'',
+      pmSite:document.getElementById('pm-'+i)?.value||''
+    });
+  });
   try {
-    await costApi({action:'saveLaborAlloc',date:laborState.date,crew:laborState.crew,allocations:JSON.stringify(allocs)});
+    for(const [date,allocs] of Object.entries(byDate)){
+      await costApi({action:'saveLaborAlloc',date,crew:laborState.crew,allocations:JSON.stringify(allocs)});
+    }
     toast('人力分配已儲存','success');
     // 同步代墊款
     const advs=laborState.advances||[];
@@ -1036,7 +1071,7 @@ async function syncSitesFromCrews() {
       }
     } catch(e){}
   }
-  saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
+  dedupSites(); saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
   toast(added>0?`已同步 ${added} 個新案場`:'所有案場已是最新','success');
 }
 
