@@ -451,7 +451,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -666,45 +666,56 @@ async function loadDashboard() {
     const totalExp=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
     const totalUnpaid=expenses.filter(r=>r['付款狀態']!=='已付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
     const totalTax=expenses.filter(r=>r['含稅']==='是').reduce((a,r)=>a+(Number(r['金額'])||0),0);
-    const rd=await costApi({action:'getReceipts',startDate:s,endDate:e}).catch(()=>({receipts:[]}));
-    const receipts=rd.receipts||[];
+    // getReport 已包含 receipts，直接用
+    const receipts=d.receipts||[];
     const totalReceived=receipts.filter(r=>r['收款狀態']==='已收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
     const totalPending=receipts.filter(r=>r['收款狀態']==='未收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
 
+    // 依案場彙總：人力 + 支出 + 收款
     const siteMap={};
+    const ensureSite=name=>{ if(!siteMap[name]) siteMap[name]={labor:0,expense:0,unpaid:0,received:0,pending:0}; };
     labor.forEach(r=>{
       [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{
-        if(!site) return;
-        if(!siteMap[site]) siteMap[site]={labor:0,expense:0,unpaid:0};
+        if(!site) return; ensureSite(site);
         siteMap[site].labor+=Number(amt)||0;
       });
     });
     expenses.forEach(r=>{
-      const site=r['案場名稱']||'未分類';
-      if(!siteMap[site]) siteMap[site]={labor:0,expense:0,unpaid:0};
+      const site=r['案場名稱']||'未分類'; ensureSite(site);
       siteMap[site].expense+=Number(r['金額'])||0;
-      if(r['付款狀態']==='未付') siteMap[site].unpaid+=Number(r['金額'])||0;
+      if(r['付款狀態']!=='已付') siteMap[site].unpaid+=Number(r['金額'])||0;
+    });
+    receipts.forEach(r=>{
+      const site=r['案場名稱']||'未分類'; ensureSite(site);
+      if(r['收款狀態']==='已收') siteMap[site].received+=Number(r['收款金額'])||0;
+      else siteMap[site].pending+=Number(r['收款金額'])||0;
     });
 
     const siteRows=Object.entries(siteMap).map(([name,v])=>`
-      <tr><td>${name}</td><td>${fmt(v.labor)}</td><td>${fmt(v.expense)}</td>
-      <td>${fmt(v.labor+v.expense)}</td>
-      <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'<span class="badge paid">結清</span>'}</td></tr>`).join('');
+      <tr>
+        <td>${name}</td>
+        <td>${fmt(v.labor)}</td>
+        <td>${fmt(v.expense)}</td>
+        <td>${fmt(v.labor+v.expense)}</td>
+        <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'<span class="badge paid">結清</span>'}</td>
+        <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
+        <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
+      </tr>`).join('');
 
     c.innerHTML=`
       <div class="stat-row">
         <div class="stat"><div class="stat-label">人力費用</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
-        <div class="stat"><div class="stat-label">案場支出</div><div class="stat-value">${fmt(totalExp)}</div></div>
+        <div class="stat"><div class="stat-label">案場支出合計</div><div class="stat-value">${fmt(totalExp)}</div></div>
         <div class="stat"><div class="stat-label">已收款</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
-        <div class="stat"><div class="stat-label">未收款</div><div class="stat-value ${totalPending>0?'warn':''}">${fmt(totalPending)}</div></div>
+        <div class="stat"><div class="stat-label">待收款</div><div class="stat-value ${totalPending>0?'warn':''}">${fmt(totalPending)}</div></div>
         <div class="stat"><div class="stat-label">未付支出</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
         <div class="stat"><div class="stat-label">含稅金額</div><div class="stat-value">${fmt(totalTax)}</div></div>
       </div>
       <div class="card"><div class="card-body">
         <div class="section-hd"><h3>各案場費用</h3></div>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>合計</th><th>未付</th></tr></thead>
-          <tbody>${siteRows||'<tr><td colspan="5" class="empty">本期無資料</td></tr>'}</tbody>
+          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>支出合計</th><th>未付</th><th>已收款</th><th>待收款</th></tr></thead>
+          <tbody>${siteRows||'<tr><td colspan="7" class="empty">本期無資料</td></tr>'}</tbody>
         </table></div>
       </div></div>`;
   } catch(err) { c.innerHTML=errMsg(err); }
@@ -1312,47 +1323,70 @@ async function loadReport() {
 
     if (rptType==='site') {
       const map={};
-      labor.forEach(r=>{ [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{ if(!site) return; if(!map[site]) map[site]={labor:0,exp:0,unpaid:0,tax:0}; map[site].labor+=Number(amt)||0; }); });
-      expenses.forEach(r=>{ const site=r['案場名稱']||'未分類'; if(!map[site]) map[site]={labor:0,exp:0,unpaid:0,tax:0}; map[site].exp+=Number(r['金額'])||0; if(r['付款狀態']==='未付') map[site].unpaid+=Number(r['金額'])||0; if(r['含稅']==='是') map[site].tax+=Number(r['金額'])||0; });
+      const ensR=n=>{ if(!map[n]) map[n]={labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0}; };
+      labor.forEach(r=>{ [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{ if(!site) return; ensR(site); map[site].labor+=Number(amt)||0; }); });
+      expenses.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); map[site].exp+=Number(r['金額'])||0; if(r['付款狀態']!=='已付') map[site].unpaid+=Number(r['金額'])||0; if(r['含稅']==='是') map[site].tax+=Number(r['金額'])||0; });
+      receipts.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); if(r['收款狀態']==='已收') map[site].received+=Number(r['收款金額'])||0; else map[site].pending+=Number(r['收款金額'])||0; });
       const rows=Object.entries(map);
-      const tot=rows.reduce((a,[,v])=>({labor:a.labor+v.labor,exp:a.exp+v.exp,unpaid:a.unpaid+v.unpaid,tax:a.tax+v.tax}),{labor:0,exp:0,unpaid:0,tax:0});
+      const tot=rows.reduce((a,[,v])=>({labor:a.labor+v.labor,exp:a.exp+v.exp,unpaid:a.unpaid+v.unpaid,tax:a.tax+v.tax,received:a.received+v.received,pending:a.pending+v.pending}),{labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0});
       area.innerHTML=`<div class="card"><div class="card-body">
         <div class="section-hd"><h3>依案場彙總</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>含稅</th><th>未付</th><th>合計</th></tr></thead>
-          <tbody>${rows.map(([name,v])=>`<tr><td>${name}</td><td>${fmt(v.labor)}</td><td>${fmt(v.exp)}</td><td>${fmt(v.tax)}</td><td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'—'}</td><td style="font-weight:700">${fmt(v.labor+v.exp)}</td></tr>`).join('')}</tbody>
-          <tfoot><tr class="tfoot-row"><td>合計</td><td>${fmt(tot.labor)}</td><td>${fmt(tot.exp)}</td><td>${fmt(tot.tax)}</td><td>${fmt(tot.unpaid)}</td><td>${fmt(tot.labor+tot.exp)}</td></tr></tfoot>
+          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>含稅</th><th>未付支出</th><th>已收款</th><th>待收款</th><th>支出合計</th></tr></thead>
+          <tbody>${rows.map(([name,v])=>`<tr>
+            <td>${name}</td>
+            <td>${fmt(v.labor)}</td>
+            <td>${fmt(v.exp)}</td>
+            <td>${fmt(v.tax)}</td>
+            <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'—'}</td>
+            <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
+            <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
+            <td style="font-weight:700">${fmt(v.labor+v.exp)}</td>
+          </tr>`).join('')}</tbody>
+          <tfoot><tr class="tfoot-row">
+            <td>合計</td>
+            <td>${fmt(tot.labor)}</td><td>${fmt(tot.exp)}</td><td>${fmt(tot.tax)}</td>
+            <td>${fmt(tot.unpaid)}</td>
+            <td style="color:#15803d">${fmt(tot.received)}</td>
+            <td>${fmt(tot.pending)}</td>
+            <td>${fmt(tot.labor+tot.exp)}</td>
+          </tr></tfoot>
         </table></div>
       </div></div>`;
 
     } else if (rptType==='date') {
       const byD={};
-      expenses.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0}; byD[d].exp+=Number(r['金額'])||0; byD[d].cnt++; });
-      labor.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0}; byD[d].labor+=(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0); });
+      expenses.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; byD[d].exp+=Number(r['金額'])||0; byD[d].cnt++; });
+      labor.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; byD[d].labor+=(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0); });
+      receipts.forEach(r=>{ const d=r['收款日期']||''; if(!d) return; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; if(r['收款狀態']==='已收') byD[d].received+=Number(r['收款金額'])||0; });
       const rows=Object.entries(byD).sort((a,b)=>a[0]<b[0]?-1:1);
       area.innerHTML=`<div class="card"><div class="card-body">
         <div class="section-hd"><h3>依日期明細</h3></div>
         <div class="tbl-wrap"><table>
-          <thead><tr><th>日期</th><th>人力</th><th>支出</th><th>筆數</th><th>小計</th></tr></thead>
-          <tbody>${rows.map(([d,v])=>`<tr><td>${d}</td><td>${fmt(v.labor)}</td><td>${fmt(v.exp)}</td><td>${v.cnt}</td><td style="font-weight:700">${fmt(v.labor+v.exp)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>日期</th><th>人力</th><th>支出</th><th>筆數</th><th>已收款</th><th>支出小計</th></tr></thead>
+          <tbody>${rows.map(([d,v])=>`<tr><td>${d}</td><td>${fmt(v.labor)}</td><td>${fmt(v.exp)}</td><td>${v.cnt}</td><td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td><td style="font-weight:700">${fmt(v.labor+v.exp)}</td></tr>`).join('')}</tbody>
         </table></div>
       </div></div>`;
 
     } else {
       const tL=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
       const tE=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
-      const tU=expenses.filter(r=>r['付款狀態']==='未付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+      const tU=expenses.filter(r=>r['付款狀態']!=='已付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
       const tT=expenses.filter(r=>r['含稅']==='是').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+      const tR=receipts.filter(r=>r['收款狀態']==='已收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
+      const tP=receipts.filter(r=>r['收款狀態']==='未收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
       area.innerHTML=`<div class="card"><div class="card-body">
         <div class="section-hd"><h3>月結報表</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
         <div class="stat-row">
           <div class="stat"><div class="stat-label">人力費用</div><div class="stat-value green">${fmt(tL)}</div></div>
           <div class="stat"><div class="stat-label">案場支出</div><div class="stat-value">${fmt(tE)}</div></div>
           <div class="stat"><div class="stat-label">含稅發票</div><div class="stat-value">${fmt(tT)}</div></div>
-          <div class="stat"><div class="stat-label">未付款項</div><div class="stat-value ${tU>0?'danger':''}">${fmt(tU)}</div></div>
+          <div class="stat"><div class="stat-label">未付支出</div><div class="stat-value ${tU>0?'danger':''}">${fmt(tU)}</div></div>
+          <div class="stat"><div class="stat-label">已收款</div><div class="stat-value green">${fmt(tR)}</div></div>
+          <div class="stat"><div class="stat-label">待收款</div><div class="stat-value ${tP>0?'warn':''}">${fmt(tP)}</div></div>
         </div>
         <div style="font-size:15px;font-weight:700;padding:12px 16px;background:var(--green-lt);border-radius:8px;color:var(--green-dk);margin-top:4px">
-          本期總費用：${fmt(tL+tE)}
+          本期支出合計：${fmt(tL+tE)}　　損益試算：${fmt(tR-(tL+tE))}
         </div>
       </div></div>`;
     }
