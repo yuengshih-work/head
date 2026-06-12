@@ -451,7 +451,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -1022,9 +1022,10 @@ async function loadExpenses() {
             ${r['出帳方式']?`<span style="font-size:10px;color:var(--muted);display:block">${r['出帳方式']}</span>`:''}
             ${r['請款人員']?`<span style="font-size:10px;color:var(--muted);display:block">${r['請款人員']}</span>`:''}
           </td>
-          <td style="white-space:nowrap">
-            ${r['付款狀態']==='未付'?`<button class="btn sm" onclick="doRequestPayment('${r['記錄ID']}')">請款</button> `:''}
-            ${r['付款狀態']==='需請款'?`<button class="btn sm primary" onclick="doConfirmPayment('${r['記錄ID']}')">出帳</button> `:''}
+          <td style="white-space:nowrap;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            ${r['付款狀態']==='未付'?`<button class="btn sm" onclick="doRequestPayment('${r['記錄ID']}')">請款</button>`:''}
+            ${r['付款狀態']==='需請款'?`<button class="btn sm primary" onclick="doConfirmPayment('${r['記錄ID']}')">出帳</button>`:''}
+            <button class="btn sm" onclick="editExpenseDialog(${JSON.stringify(r).split('"').join('&quot;')})">✎</button>
             <button class="btn sm danger" onclick="delExp('${r['記錄ID']}')">✕</button>
           </td>
         </tr>`).join('')}
@@ -1118,6 +1119,109 @@ async function getEmployeeList() {
   _empCache = results;
   return results;
 }
+function editExpenseDialog(r) {
+  const sites = CFG.sites.filter(s=>s.status==='進行中');
+  const siteOpts = sites.map(s=>`<option value="${s.siteId}|${s.name}" ${s.name===r['案場名稱']?'selected':''}>${s.name}</option>`).join('');
+  const methods=['現金','匯款','支票'];
+  const pmBtns=methods.map(m=>`<button id="ee-pm-${m}" class="${r['出帳方式']===m?'active':''}" onclick="document.querySelectorAll('[id^=ee-pm-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:100%;margin:auto">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯支出</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">日期</div>
+        <input type="date" id="ee-date" value="${r['日期']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">案場</div>
+        <select id="ee-site" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${siteOpts}</select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">廠商</div>
+        <input type="text" id="ee-vendor" value="${r['廠商名稱']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">品項</div>
+        <input type="text" id="ee-desc" value="${r['品項說明']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">金額</div>
+        <input type="number" id="ee-amount" value="${r['金額']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票號碼</div>
+        <input type="text" id="ee-invoice" value="${r['發票號碼']||''}" placeholder="選填" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票狀態</div>
+        <div class="toggle-grp">
+          <button id="ee-tax" class="${r['含稅']==='是'?'active':''}" onclick="document.getElementById('ee-tax').classList.add('active');document.getElementById('ee-notax').classList.remove('active')">含稅</button>
+          <button id="ee-notax" class="${r['含稅']!=='是'?'active':''}" onclick="document.getElementById('ee-notax').classList.add('active');document.getElementById('ee-tax').classList.remove('active')">未稅</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">付款狀態</div>
+        <div class="toggle-grp">
+          <button id="ee-st-未付" class="${r['付款狀態']==='未付'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">未付</button>
+          <button id="ee-st-需請款" class="${r['付款狀態']==='需請款'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">請款</button>
+          <button id="ee-st-已付" class="${r['付款狀態']==='已付'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">已付</button>
+        </div>
+      </div>
+    </div>
+    <div id="ee-paymethod-wrap" style="${r['付款狀態']==='已付'?'':'display:none'};margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">出帳方式</div>
+      <div class="toggle-grp">${pmBtns}</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">備註</div>
+      <input type="text" id="ee-note" value="${r['備註']||''}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitEditExpense('${r['記錄ID']}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  // 付款狀態切換時顯示/隱藏出帳方式
+  document.querySelectorAll('[id^=ee-st-]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.getElementById('ee-paymethod-wrap').style.display = b.id==='ee-st-已付' ? '' : 'none';
+    });
+  });
+}
+
+async function submitEditExpense(id) {
+  const siteVal = document.getElementById('ee-site')?.value||'';
+  const {siteId,name:siteName} = parseSiteVal(siteVal);
+  const activeSt = document.querySelector('[id^=ee-st-].active');
+  const payStatus = activeSt?.textContent==='請款'?'需請款':(activeSt?.textContent||'未付');
+  const activePm = document.querySelector('[id^=ee-pm-].active');
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({
+      action:'updateExpense', expenseId:id,
+      date:    document.getElementById('ee-date')?.value,
+      siteId, siteName,
+      vendor:  document.getElementById('ee-vendor')?.value,
+      desc:    document.getElementById('ee-desc')?.value,
+      amount:  document.getElementById('ee-amount')?.value,
+      invoice: document.getElementById('ee-invoice')?.value,
+      hasTax:  document.getElementById('ee-tax')?.classList.contains('active')?'true':'false',
+      payStatus,
+      payMethod: payStatus==='已付' ? (activePm?.textContent||'現金') : '',
+      note:    document.getElementById('ee-note')?.value
+    });
+    toast('支出已更新','success'); loadExpenses();
+  } catch(e) { toast('更新失敗','error'); }
+}
+
 async function delExp(id) {
   if (!confirm('確定刪除此筆支出？')) return;
   try { await costApi({action:'deleteExpense',expenseId:id}); toast('已刪除','success'); loadExpenses(); }
@@ -1178,8 +1282,9 @@ async function loadContracts() {
       const remaining = amount - totalReceived;
       const period = (c['施工開始']||'') + (c['施工開始']&&c['施工結束']?' ~ ':'') + (c['施工結束']||'');
 
+      const isLocked = c['狀態']==='已完成';
       const receiptRows = cReceipts.map(r=>`
-        <div class="receipt-row">
+        <div class="receipt-row" style="${isLocked?'opacity:.75':''}">
           <div style="flex:1">
             <span style="font-weight:600">${fmt(r['收款金額'])}</span>
             <span style="color:var(--muted);margin-left:6px;font-size:11px">${r['收款日期']||'未定日期'}</span>
@@ -1189,15 +1294,17 @@ async function loadContracts() {
           <div style="display:flex;align-items:center;gap:6px">
             ${r['收款狀態']==='已收'
               ? '<span class="badge income">已收</span>'
-              : `<button class="btn sm primary" onclick="doConfirmReceipt('${r['收款ID']}')">確認收款</button>`}
-            <button class="btn sm danger" onclick="delReceipt('${r['收款ID']}')">✕</button>
+              : (isLocked ? '<span class="badge notax">鎖定</span>'
+                : `<button class="btn sm primary" onclick="doConfirmReceipt('${r['收款ID']}')">確認收款</button>`)}
+            ${!isLocked ? `<button class="btn sm" onclick="editReceiptDialog('${r['收款ID']}','${r['收款金額']}','${r['收款日期']}','${r['付款方式']||''}','${r['備註']||''}','${r['收款狀態']}')">✎</button>` : ''}
+            ${!isLocked ? `<button class="btn sm danger" onclick="delReceipt('${r['收款ID']}')">✕</button>` : ''}
           </div>
         </div>`).join('');
 
       return `<div class="contract-card">
         <div class="contract-hd">
           <div style="flex:1">
-            <div class="contract-title">${c['案場名稱']} ${c['合約說明']?'— '+c['合約說明']:''}</div>
+            <div class="contract-title">${c['案場名稱']} ${c['合約說明']?'— '+c['合約說明']:''} ${c['狀態']==='已完成'?'<span style="font-size:11px;font-weight:400;color:#15803d">（已完成）</span>':''}</div>
             <div class="contract-meta">
               ${period?period+'　':''}
               <span class="badge ${c['含稅']==='是'?'tax':'notax'}">${c['含稅']==='是'?'含稅':'未稅'}</span>
@@ -1211,9 +1318,17 @@ async function loadContracts() {
         </div>
         ${c['備註']?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${c['備註']}</div>`:''}
         ${receiptRows?`<div style="border-top:1px solid #f0f0f0;padding-top:8px;margin-top:4px">${receiptRows}</div>`:''}
-        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn sm primary" onclick="addReceiptDialog('${c['合約ID']}','${c['案場ID']}','${c['案場名稱']}')">＋ 新增收款</button>
-          <button class="btn sm danger" onclick="delContract('${c['合約ID']}')">刪除合約</button>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          ${isLocked
+            ? `<span style="font-size:12px;font-weight:500;color:#15803d;background:#dcfce7;padding:4px 12px;border-radius:20px">✓ 收款已完成</span>`
+            : `
+              <button class="btn sm primary" onclick="addReceiptDialog('${c['合約ID']}','${c['案場ID']}','${c['案場名稱']}')">＋ 新增收款</button>
+              ${totalPending===0 && cReceipts.length>0
+                ? `<button class="btn sm" style="background:#15803d;color:#fff;border-color:#15803d" onclick="completeContract('${c['合約ID']}')">✓ 完成收款</button>`
+                : ''}
+              <button class="btn sm danger" onclick="delContract('${c['合約ID']}')">刪除合約</button>
+            `
+          }
         </div>
       </div>`;
     }).join('');
@@ -1282,6 +1397,58 @@ async function confirmReceiptSubmit(id) {
     await costApi({action:'confirmReceipt', receiptId:id, payMethod, receiptDate});
     toast('已確認收款','success'); loadContracts();
   } catch(err) { toast('操作失敗','error'); }
+}
+
+async function completeContract(contractId) {
+  if (!confirm('確定完成此合約收款？\n完成後所有收款記錄將鎖定無法編輯。')) return;
+  try {
+    await costApi({action:'updateContract', contractId, status:'已完成'});
+    toast('合約已完成，收款記錄已鎖定','success');
+    loadContracts();
+  } catch(e) { toast('操作失敗','error'); }
+}
+
+function editReceiptDialog(id, amount, date, method, note, status) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  const methods=['匯款','現金','支票','其他'];
+  const mBtns=methods.map(m=>`<button id="er-${m}" class="${(method||'匯款')===m?'active':''}" onclick="document.querySelectorAll('[id^=er-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:340px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯收款記錄</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款金額</div>
+    <input type="number" id="er-amount" value="${amount}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">日期</div>
+    <input type="date" id="er-date" value="${date}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款方式</div>
+    <div class="toggle-grp" style="margin-bottom:10px">${mBtns}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">備註</div>
+    <input type="text" id="er-note" value="${note}" placeholder="" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款狀態</div>
+    <div class="toggle-grp" style="margin-bottom:16px">
+      <button id="er-st-未收" class="${status==='未收'?'active':''}" onclick="document.querySelectorAll('[id^=er-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">未收</button>
+      <button id="er-st-已收" class="${status==='已收'?'active':''}" onclick="document.querySelectorAll('[id^=er-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">已收</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitEditReceipt('${id}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function submitEditReceipt(id) {
+  const amount = document.getElementById('er-amount')?.value;
+  const date   = document.getElementById('er-date')?.value;
+  const note   = document.getElementById('er-note')?.value||'';
+  const activeMethod = document.querySelector('[id^=er-]:not([id^=er-st-]):not([id=er-amount]):not([id=er-date]):not([id=er-note]).active');
+  const payMethod = activeMethod?.textContent||'';
+  const activeSt  = document.querySelector('[id^=er-st-].active');
+  const status    = activeSt?.textContent||'未收';
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'updateReceipt', receiptId:id, amount, receiptDate:date, payMethod, note, status});
+    toast('已更新','success'); loadContracts();
+  } catch(e) { toast('更新失敗','error'); }
 }
 
 async function delContract(id) {
@@ -1538,5 +1705,4 @@ function errMsg(e) { return `<div class="empty" style="color:var(--danger)">❌ 
 </script>
 </body>
 </html>
-
 
