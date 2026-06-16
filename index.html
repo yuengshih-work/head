@@ -451,7 +451,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -904,6 +904,20 @@ function renderExpense() {
     const f=this.files[0];
     document.getElementById('exp-file-preview').textContent=f?'已選：'+f.name:'';
   };
+  // 預先載入員工名單填入請款人員下拉
+  loadEmployeeSelect('exp-request-by');
+}
+
+async function loadEmployeeSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const employees = await getEmployeeList();
+    if (!employees.length) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— 選擇 —</option>' +
+      employees.map(e=>`<option value="${e.name}" ${e.name===current?'selected':''}>${e.name}</option>`).join('');
+  } catch(e) {}
 }
 
 function setTax(v) {
@@ -1705,4 +1719,3 @@ function errMsg(e) { return `<div class="empty" style="color:var(--danger)">❌ 
 </script>
 </body>
 </html>
-
