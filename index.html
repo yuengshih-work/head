@@ -300,6 +300,21 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
         <button class="btn primary full" onclick="submitExpense()">＋ 新增紀錄</button>
       </div></div>
 
+      <!-- 同步代墊款 -->
+      <div class="card"><div class="card-body">
+        <div class="section-hd">
+          <h3>同步打卡系統代墊款</h3>
+          <button class="btn sm primary" onclick="syncAdvancePayments()">⟳ 同步</button>
+        </div>
+        <div class="date-range" style="margin-bottom:8px">
+          <input type="date" id="adv-sync-start">
+          <span>至</span>
+          <input type="date" id="adv-sync-end">
+        </div>
+        <div style="font-size:11px;color:var(--muted)">從各工班打卡系統匯入代墊款。已匯入的會更新付款狀態、發票、金額等，不覆蓋手動修改的請款人員/出帳方式。</div>
+        <div id="adv-sync-result" style="font-size:12px;margin-top:8px"></div>
+      </div></div>
+
       <!-- 明細列表 -->
       <div class="card"><div class="card-body">
         <div class="section-hd">
@@ -307,6 +322,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
           <select id="filter-paid" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit" onchange="loadExpenses()">
             <option value="">全部</option>
             <option value="未付">未付</option>
+            <option value="需請款">需請款</option>
             <option value="已付">已付</option>
           </select>
         </div>
@@ -451,7 +467,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 // ═══════════════════════════════════════
 //  授權
 // ═══════════════════════════════════════
-const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar158@gmail.com'];
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
 let currentUser = null;
 
 window.handleCredentialResponse = function(resp) {
@@ -898,6 +914,8 @@ function renderExpense() {
   buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
   buildSiteSelect('exp-site',false);
   buildSiteSelect('filter-site',true);
+  // 同步代墊款日期預設本月
+  if (!document.getElementById('adv-sync-start').value) setDateRange('adv-sync-start','adv-sync-end',s,e);
   loadExpenses();
   // 附件選擇預覽
   document.getElementById('exp-file').onchange=function(){
@@ -986,6 +1004,72 @@ async function submitExpense() {
     loadExpenses();
   } catch(err) { toast('新增失敗：'+err.message,'error'); }
   finally { btn.textContent='＋ 新增紀錄'; btn.disabled=false; }
+}
+
+// ═══════════════════════════════════════
+//  同步代墊款（從各工班打卡系統匯入）
+// ═══════════════════════════════════════
+async function syncAdvancePayments() {
+  const startDate = document.getElementById('adv-sync-start').value;
+  const endDate   = document.getElementById('adv-sync-end').value;
+  if (!startDate||!endDate) { toast('請選擇日期區間','error'); return; }
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+
+  const resultEl = document.getElementById('adv-sync-result');
+  resultEl.innerHTML = '<span class="spinner"></span>同步中…';
+
+  let totalNew = 0, totalUpdated = 0, totalSkipped = 0;
+  const errors = [];
+
+  // 對所有啟用的工班逐一抓代墊款
+  const crews = CFG.crews.length ? CFG.crews : [{工班代號:'A'},{工班代號:'B'}];
+
+  for (const crew of crews) {
+    const code = crew['工班代號'];
+    const url = CFG.crewUrls[code] || crew['Apps Script URL'] || '';
+    if (!url) continue;
+
+    try {
+      // 1. 從打卡系統抓代墊款
+      const d = await api(url, { action:'getAdvancePayments', startDate, endDate });
+      const advances = d.records || [];
+
+      // 2. 對每筆呼叫 syncAdvanceExpense（後端會判斷新增/更新）
+      for (const adv of advances) {
+        try {
+          const r = await costApi({
+            action: 'syncAdvanceExpense',
+            sourceRecordId: adv.recordId,
+            date: adv.date,
+            siteName: adv.site,
+            vendor: adv.name + '（代墊）',
+            desc: adv.items || '代買材料',
+            amount: adv.amount,
+            hasTax: adv.invoice ? 'true' : 'false',
+            invoice: adv.invoice || '',
+            payStatus: adv.paid ? '已付' : '未付',
+            paidDate: adv.payDate || '',
+            note: adv.invoice ? ('發票：' + adv.invoice) : '無發票'
+          });
+          if (r.action === 'created') totalNew++;
+          else if (r.action === 'updated') totalUpdated++;
+          else totalSkipped++;
+        } catch(e) { errors.push(adv.name+' '+adv.date+': '+e.message); }
+      }
+    } catch(err) {
+      errors.push(code+'工班: '+err.message);
+    }
+  }
+
+  // 顯示結果
+  let msg = `✓ 同步完成 — 新增 ${totalNew} 筆，更新 ${totalUpdated} 筆`;
+  if (totalSkipped) msg += `，未變動 ${totalSkipped} 筆`;
+  if (errors.length) msg += `，錯誤 ${errors.length} 筆`;
+  resultEl.innerHTML = `<span style="color:${errors.length?'var(--danger)':'#15803d'};font-weight:500">${msg}</span>`;
+  if (errors.length) resultEl.innerHTML += `<div style="margin-top:4px;color:var(--muted);font-size:11px">${errors.slice(0,3).join('<br>')}</div>`;
+
+  toast(msg, errors.length ? 'error' : 'success');
+  loadExpenses();
 }
 
 async function uploadFile(file, expenseId) {
@@ -1663,7 +1747,7 @@ async function addSiteManual() {
   try {
     const r=await costApi({action:'addSite',name});
     CFG.sites.push({siteId:r.siteId,name,status:'進行中'});
-    saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
+    saveCfg(); buildAllSiteSelects(); renderSiteListSettings();F
     document.getElementById('new-site-name').value='';
     toast('案場已新增','success');
   } catch(e) { toast('新增失敗','error'); }
