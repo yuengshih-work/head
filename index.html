@@ -378,6 +378,27 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
     </div>
 
     <!-- 報表 -->
+    <!-- 薪資發放 -->
+    <div id="page-payroll" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>薪資發放</h3></div>
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="field" style="margin:0"><label>發放月份</label>
+            <input type="month" id="pay-month">
+          </div>
+          <div class="field" style="margin:0"><label>工班</label>
+            <select id="pay-crew"><option value="">全部工班</option></select>
+          </div>
+        </div>
+        <button class="btn primary full" onclick="loadPayroll()">⬇ 載入本期薪資</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">
+          從各工班打卡系統彙總本月薪資並寫入本系統。未發放＝應付薪資；標記發放後即計入成本。
+        </div>
+      </div></div>
+      <div id="payroll-area"></div>
+    </div>
+
+    <!-- 報表 -->
     <div id="page-report" class="page">
       <div class="card"><div class="card-body">
         <div class="section-hd"><h3>報表查詢</h3></div>
@@ -451,6 +472,9 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
     </button>
     <button class="nav-btn" onclick="showPage('expense')" id="nav-expense">
       <span class="ni">🧾</span><span>支出</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('payroll')" id="nav-payroll">
+      <span class="ni">💵</span><span>薪資</span>
     </button>
     <button class="nav-btn" onclick="showPage('report')" id="nav-report">
       <span class="ni">📈</span><span>報表</span>
@@ -619,7 +643,7 @@ function showPage(p) {
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
   document.getElementById('nav-'+p).classList.add('active');
-  const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,report:renderReport,settings:renderSettings};
+  const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payroll:renderPayroll,report:renderReport,settings:renderSettings};
   renders[p]();
 }
 
@@ -1716,6 +1740,160 @@ async function delReceipt(id) {
   catch(e) { toast('刪除失敗','error'); }
 }
 // ═══════════════════════════════════════
+//  薪資發放
+// ═══════════════════════════════════════
+let payrollState = { rows:[], month:'' };
+
+function crewName(code) {
+  const c = CFG.crews.find(x=>x['工班代號']===code);
+  return c ? (c['工班名稱']||code+'工班') : code+'工班';
+}
+
+function renderPayroll() {
+  // 月份預設本月
+  const mEl=document.getElementById('pay-month');
+  if (!mEl.value) mEl.value = (new Date()).toISOString().slice(0,7);
+  // 工班下拉
+  const sel=document.getElementById('pay-crew');
+  const crews=CFG.crews.length ? CFG.crews : [{工班代號:'A',工班名稱:'A工班'},{工班代號:'B',工班名稱:'B工班'}];
+  sel.innerHTML='<option value="">全部工班</option>'+crews.map(c=>`<option value="${c['工班代號']}">${c['工班名稱']||c['工班代號']+'工班'}</option>`).join('');
+}
+
+async function loadPayroll() {
+  if (!CFG.costUrl) { document.getElementById('payroll-area').innerHTML=noUrlMsg(); return; }
+  const area=document.getElementById('payroll-area');
+  const month=document.getElementById('pay-month').value;
+  const onlyCrew=document.getElementById('pay-crew').value;
+  if (!month) { toast('請先選發放月份','error'); return; }
+  area.innerHTML='<div class="loading-box"><span class="spinner"></span>從各工班彙總中…</div>';
+  try {
+    const crews=(CFG.crews.length?CFG.crews:[{工班代號:'A'},{工班代號:'B'}])
+      .filter(c=>!onlyCrew||c['工班代號']===onlyCrew);
+    // 1) 各工班打卡後端算好的薪資彙總
+    const merged=[];
+    for (const c of crews) {
+      const code=c['工班代號'];
+      const url=CFG.crewUrls[code]||c['Apps Script URL']||'';
+      if (!url) continue;
+      const d=await crewApi(code,{action:'report',month}).catch(()=>({salary:[]}));
+      (d.salary||[]).forEach(s=>{
+        merged.push({
+          crew:code, empId:s.empId||'', name:s.name,
+          days:s.days||0, dailyWage:s.dailyWage||0, gross:s.gross||0,
+          hasReceipt:s.hasReceipt!==false, deduction:s.deduction||0,
+          buyTotal:s.buyTotal||0, net:s.net!==undefined?s.net:((s.gross||0)-(s.deduction||0)+(s.buyTotal||0))
+        });
+      });
+    }
+    if (merged.length===0) {
+      area.innerHTML='<div class="card"><div class="card-body" style="color:var(--muted)">本月沒有可結算的薪資（各工班打卡系統無完整出勤，或工班 URL 未設定）。</div></div>';
+      return;
+    }
+    // 2) 寫入/更新本系統薪資發放表（保留已發放狀態）
+    await costApi({action:'upsertPayrollBatch',period:month,rows:JSON.stringify(merged)});
+    // 3) 讀回含發放狀態的資料
+    const pd=await costApi({action:'getPayroll',period:month});
+    payrollState={ rows:pd.payroll||[], month };
+    renderPayrollTable();
+  } catch(err) { area.innerHTML=errMsg(err); }
+}
+
+function renderPayrollTable() {
+  const area=document.getElementById('payroll-area');
+  const rows=payrollState.rows;
+  const totNet   = rows.reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+  const paidNet  = rows.filter(r=>r['發放狀態']==='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+  const unpaidNet= totNet-paidNet;
+  const body=rows.map(r=>{
+    const paid=r['發放狀態']==='已發放';
+    const id=r['發放ID'];
+    return `<tr>
+      <td>${r['姓名']}</td>
+      <td>${crewName(r['工班'])}</td>
+      <td>${r['出勤天數']}</td>
+      <td>${fmt(r['應發薪資'])}</td>
+      <td>${Number(r['扣繳'])>0?`<span style="color:var(--danger)">-${fmt(r['扣繳'])}</span>`:'—'}</td>
+      <td>${Number(r['代買材料'])>0?fmt(r['代買材料']):'—'}</td>
+      <td style="font-weight:700">${fmt(r['實發合計'])}</td>
+      <td>${paid
+        ? `<span class="badge paid">已發放</span><div style="font-size:10px;color:var(--muted)">${r['發放日期']||''} ${r['發放方式']||''}</div>`
+        : `<span class="badge unpaid">應付</span>`}</td>
+      <td>${paid
+        ? `<button class="btn sm" onclick="unmarkPayroll('${id}')">取消</button>`
+        : `<button class="btn sm primary" onclick="payDialog('${id}','${(r['姓名']||'').replace(/'/g,'')}')">發放</button>`}</td>
+    </tr>`;
+  }).join('');
+  area.innerHTML=`<div class="card"><div class="card-body">
+    <div class="section-hd"><h3>${payrollState.month} 薪資彙總</h3>
+      <button class="btn sm" onclick="payAllDialog()">一鍵全部發放</button></div>
+    <div class="stat-row" style="margin-bottom:10px">
+      <div class="stat"><div class="stat-label">應付薪資（未發放）</div><div class="stat-value ${unpaidNet>0?'warn':''}">${fmt(unpaidNet)}</div></div>
+      <div class="stat"><div class="stat-label">已發放（計入成本）</div><div class="stat-value green">${fmt(paidNet)}</div></div>
+      <div class="stat"><div class="stat-label">實發合計</div><div class="stat-value">${fmt(totNet)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>姓名</th><th>工班</th><th>天數</th><th>應發</th><th>扣繳</th><th>代買</th><th>實發</th><th>狀態</th><th>操作</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">💡 代買材料同時也在「支出」以代墊款列帳，計損益時請擇一避免重複。</div>
+  </div></div>`;
+}
+
+function payDialog(payrollId, name) {
+  const html=`<div class="field"><label>發放日期</label><input type="date" id="pay-date" value="${today()}"></div>
+    <div class="field"><label>發放方式</label><select id="pay-method"><option>現金</option><option>匯款</option><option>支票</option></select></div>
+    <button class="btn primary full" onclick="doPayrollPaid('${payrollId}')">確認發放給 ${name}</button>`;
+  openModal('標記薪資發放', html);
+}
+
+async function doPayrollPaid(payrollId) {
+  const payDate=document.getElementById('pay-date').value;
+  const payMethod=document.getElementById('pay-method').value;
+  try {
+    await costApi({action:'markPayrollPaid',payrollId,payDate,payMethod});
+    closeModal();
+    const pd=await costApi({action:'getPayroll',period:payrollState.month});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast('已標記發放','success');
+  } catch(e) { toast('操作失敗','error'); }
+}
+
+async function unmarkPayroll(payrollId) {
+  if (!confirm('取消此筆發放？金額將回到應付。')) return;
+  try {
+    await costApi({action:'unmarkPayroll',payrollId});
+    const pd=await costApi({action:'getPayroll',period:payrollState.month});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast('已取消發放','success');
+  } catch(e) { toast('操作失敗','error'); }
+}
+
+function payAllDialog() {
+  const unpaid=payrollState.rows.filter(r=>r['發放狀態']!=='已發放');
+  if (unpaid.length===0) { toast('沒有待發放項目','error'); return; }
+  const html=`<div style="margin-bottom:10px">將一次發放 <strong>${unpaid.length}</strong> 位、合計 <strong>${fmt(unpaid.reduce((a,r)=>a+(Number(r['實發合計'])||0),0))}</strong></div>
+    <div class="field"><label>發放日期</label><input type="date" id="payall-date" value="${today()}"></div>
+    <div class="field"><label>發放方式</label><select id="payall-method"><option>現金</option><option>匯款</option><option>支票</option></select></div>
+    <button class="btn primary full" onclick="doPayAll()">確認全部發放</button>`;
+  openModal('一鍵發放', html);
+}
+
+async function doPayAll() {
+  const payDate=document.getElementById('payall-date').value;
+  const payMethod=document.getElementById('payall-method').value;
+  const unpaid=payrollState.rows.filter(r=>r['發放狀態']!=='已發放');
+  try {
+    for (const r of unpaid) {
+      await costApi({action:'markPayrollPaid',payrollId:r['發放ID'],payDate,payMethod});
+    }
+    closeModal();
+    const pd=await costApi({action:'getPayroll',period:payrollState.month});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast(`已發放 ${unpaid.length} 筆`,'success');
+  } catch(e) { toast('操作失敗','error'); }
+}
+
+// ═══════════════════════════════════════
 //  報表
 // ═══════════════════════════════════════
 function renderReport() {
@@ -1790,12 +1968,36 @@ async function loadReport() {
       </div></div>`;
 
     } else {
+      // 月結：加抓合約與收款，用「未完成合約金額 − 已收款」算應收帳款（與總覽同口徑）
+      const [cd, rdAll] = await Promise.all([
+        costApi({action:'getContracts', siteId}).catch(()=>({contracts:[]})),
+        costApi({action:'getReceipts',  siteId}).catch(()=>({receipts:[]}))
+      ]);
+      const allContracts = cd.contracts || [];
+      const allReceipts  = rdAll.receipts  || [];
+      // 每份合約累計已收款
+      const contractReceived={};
+      allReceipts.filter(r=>r['收款狀態']==='已收').forEach(r=>{
+        const cid=r['合約ID']; contractReceived[cid]=(contractReceived[cid]||0)+(Number(r['收款金額'])||0);
+      });
+      // 應收帳款 = 未完成合約的（合約金額 − 已收款）合計
+      const tAR=allContracts.filter(c=>c['狀態']!=='已完成').reduce((a,c)=>{
+        const amt=Number(c['合約金額'])||0, got=contractReceived[c['合約ID']]||0;
+        return a + Math.max(0, amt-got);
+      },0);
+
       const tL=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
       const tE=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
       const tU=expenses.filter(r=>String(r['付款狀態']||'').trim()!=='已付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
       const tT=expenses.filter(r=>r['含稅']==='是').reduce((a,r)=>a+(Number(r['金額'])||0),0);
-      const tR=receipts.filter(r=>r['收款狀態']==='已收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
-      const tP=receipts.filter(r=>r['收款狀態']==='未收').reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
+      // 期間內已收款（依收款日期落在報表區間內）
+      const tR=allReceipts.filter(r=>r['收款狀態']==='已收' && r['收款日期']>=s && r['收款日期']<=e)
+                          .reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
+      // 薪資：未發放=應付；已發放=計入成本（依期間 yyyy-MM 落在報表區間）
+      const pd=await costApi({action:'getPayroll',startMonth:s.slice(0,7),endMonth:e.slice(0,7)}).catch(()=>({payroll:[]}));
+      const pay=pd.payroll||[];
+      const tPayUnpaid=pay.filter(r=>r['發放狀態']!=='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+      const tPayPaid  =pay.filter(r=>r['發放狀態']==='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
       area.innerHTML=`<div class="card"><div class="card-body">
         <div class="section-hd"><h3>月結報表</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
         <div class="stat-row">
@@ -1803,8 +2005,10 @@ async function loadReport() {
           <div class="stat"><div class="stat-label">案場支出</div><div class="stat-value">${fmt(tE)}</div></div>
           <div class="stat"><div class="stat-label">含稅發票</div><div class="stat-value">${fmt(tT)}</div></div>
           <div class="stat"><div class="stat-label">未付支出</div><div class="stat-value ${tU>0?'danger':''}">${fmt(tU)}</div></div>
+          <div class="stat"><div class="stat-label">已發薪資</div><div class="stat-value green">${fmt(tPayPaid)}</div></div>
+          <div class="stat"><div class="stat-label">應付薪資</div><div class="stat-value ${tPayUnpaid>0?'danger':''}">${fmt(tPayUnpaid)}</div></div>
           <div class="stat"><div class="stat-label">已收款</div><div class="stat-value green">${fmt(tR)}</div></div>
-          <div class="stat"><div class="stat-label">待收款</div><div class="stat-value ${tP>0?'warn':''}">${fmt(tP)}</div></div>
+          <div class="stat"><div class="stat-label">應收帳款</div><div class="stat-value ${tAR>0?'warn':''}">${fmt(tAR)}</div></div>
         </div>
         <div style="font-size:15px;font-weight:700;padding:12px 16px;background:var(--green-lt);border-radius:8px;color:var(--green-dk);margin-top:4px">
           本期支出合計：${fmt(tL+tE)}　　損益試算：${fmt(tR-(tL+tE))}
@@ -1956,6 +2160,20 @@ function toast(msg,type='') {
 
 function noUrlMsg() { return `<div class="empty">⚙ 尚未設定費用系統 URL<br><span style="font-size:12px">請先到設定頁填入 Apps Script URL</span></div>`; }
 function errMsg(e) { return `<div class="empty" style="color:var(--danger)">❌ ${e.message}</div>`; }
+function openModal(title, innerHtml) {
+  closeModal();
+  const div=document.createElement('div');
+  div.id='app-modal';
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">${title}</div>
+    ${innerHtml}
+    <button class="btn full" style="margin-top:8px" onclick="closeModal()">取消</button>
+  </div>`;
+  document.body.appendChild(div);
+}
+function closeModal(){ const m=document.getElementById('app-modal'); if(m) m.remove(); }
 </script>
 </body>
 </html>
+
