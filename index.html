@@ -1759,42 +1759,111 @@ function renderPayroll() {
   sel.innerHTML='<option value="">全部工班</option>'+crews.map(c=>`<option value="${c['工班代號']}">${c['工班名稱']||c['工班代號']+'工班'}</option>`).join('');
 }
 
+function crewUrlOf(code) {
+  return CFG.crewUrls[code] || (CFG.crews.find(c=>c['工班代號']===code)||{})['Apps Script URL'] || '';
+}
+
+// 產生某月份(yyyy-MM)的每日日期字串陣列
+function daysOfMonth(month) {
+  const [y,m]=month.split('-').map(Number);
+  const last=new Date(y, m, 0).getDate();     // 該月最後一天
+  const out=[];
+  for (let d=1; d<=last; d++) out.push(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  return out;
+}
+
+// 選配：向工班 report 取每人扣繳/勞報單（需管理員權限，抓不到就回 null 略過）
+async function fetchDeductionMap(url, month) {
+  const email = (currentUser && currentUser.email) || '';
+  try {
+    const res = await fetch(url+'?'+new URLSearchParams({action:'report', month, email}).toString());
+    const d = await res.json();
+    if (!Array.isArray(d.salary)) return null;
+    const map={};
+    d.salary.forEach(s=>{ map[s.name]={ hasReceipt:s.hasReceipt!==false, deduction:Number(s.deduction)||0 }; });
+    return map;
+  } catch(e) { return null; }
+}
+
 async function loadPayroll() {
   if (!CFG.costUrl) { document.getElementById('payroll-area').innerHTML=noUrlMsg(); return; }
   const area=document.getElementById('payroll-area');
   const month=document.getElementById('pay-month').value;
   const onlyCrew=document.getElementById('pay-crew').value;
   if (!month) { toast('請先選發放月份','error'); return; }
-  area.innerHTML='<div class="loading-box"><span class="spinner"></span>從各工班彙總中…</div>';
+  area.innerHTML='<div class="loading-box"><span class="spinner"></span>從各工班出工計算中…</div>';
   try {
     const crews=(CFG.crews.length?CFG.crews:[{工班代號:'A'},{工班代號:'B'}])
       .filter(c=>!onlyCrew||c['工班代號']===onlyCrew);
-    // 1) 各工班打卡後端算好的薪資彙總
-    const merged=[];
+    const dates=daysOfMonth(month);
+    const merged=[]; const problems=[]; let noReceiptInfo=false;
+
     for (const c of crews) {
       const code=c['工班代號'];
-      const url=CFG.crewUrls[code]||c['Apps Script URL']||'';
-      if (!url) continue;
-      const d=await crewApi(code,{action:'report',month}).catch(()=>({salary:[]}));
-      (d.salary||[]).forEach(s=>{
+      const cname=c['工班名稱']||code+'工班';
+      const url=crewUrlOf(code);
+      if (!url) { problems.push(`${cname}：未設定工班 URL`); continue; }
+
+      // 用 getLaborByDate 逐日抓出工（免管理員權限，與人力頁同一條路）
+      const dayResults=await Promise.all(dates.map(d=>
+        crewApi(code,{action:'getLaborByDate',date:d}).catch(()=>({records:[]}))
+      ));
+      // 依員工彙總（只算有打下班卡的）
+      const agg={};
+      dayResults.forEach(dr=>(dr.records||[]).forEach(r=>{
+        if (!r.clockedOut) return;
+        const k=r.name;
+        if (!agg[k]) agg[k]={ name:r.name, empId:r.empId||'', days:0, dailyWage:Number(r.dailyWage)||0, gross:0 };
+        agg[k].days+=1;
+        agg[k].gross+=Number(r.dailyWage)||0;
+      }));
+      const names=Object.keys(agg);
+      if (names.length===0) { problems.push(`${cname}：本月無完整出勤（需有打下班卡）`); continue; }
+
+      // 選配：抓扣繳資訊（勞報單 7%）。抓不到就先不扣、標註。
+      const dedMap=await fetchDeductionMap(url, month);
+      if (!dedMap) noReceiptInfo=true;
+
+      names.forEach(k=>{
+        const w=agg[k];
+        const dm=dedMap&&dedMap[k];
+        const deduction=dm?dm.deduction:0;
         merged.push({
-          crew:code, empId:s.empId||'', name:s.name,
-          days:s.days||0, dailyWage:s.dailyWage||0, gross:s.gross||0,
-          hasReceipt:s.hasReceipt!==false, deduction:s.deduction||0,
-          buyTotal:s.buyTotal||0, net:s.net!==undefined?s.net:((s.gross||0)-(s.deduction||0)+(s.buyTotal||0))
+          crew:code, empId:w.empId, name:w.name,
+          days:w.days, dailyWage:w.dailyWage, gross:w.gross,
+          hasReceipt: dm?dm.hasReceipt:true, deduction, buyTotal:0,
+          net: w.gross-deduction
         });
       });
     }
+
     if (merged.length===0) {
-      area.innerHTML='<div class="card"><div class="card-body" style="color:var(--muted)">本月沒有可結算的薪資（各工班打卡系統無完整出勤，或工班 URL 未設定）。</div></div>';
+      area.innerHTML=`<div class="card"><div class="card-body" style="color:var(--muted)">
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px">本月沒有抓到薪資</div>
+        ${problems.map(p=>`<div>• ${p}</div>`).join('')}
+        <div style="margin-top:10px;font-size:12px">目前登入：<strong>${(currentUser&&currentUser.email)||'未登入'}</strong>。若各工班本月確實有打卡，請確認發放月份與工班 URL。</div>
+      </div></div>`;
       return;
     }
-    // 2) 寫入/更新本系統薪資發放表（保留已發放狀態）
-    await costApi({action:'upsertPayrollBatch',period:month,rows:JSON.stringify(merged)});
-    // 3) 讀回含發放狀態的資料
-    const pd=await costApi({action:'getPayroll',period:month});
-    payrollState={ rows:pd.payroll||[], month };
+
+    // 寫回費用系統薪資發放表；若後端尚未更新則改用計算結果直接顯示
+    let usedFallback=false;
+    try {
+      await costApi({action:'upsertPayrollBatch',period:month,rows:JSON.stringify(merged)});
+      const pd=await costApi({action:'getPayroll',period:month});
+      payrollState={ rows:pd.payroll||[], month };
+    } catch(e) {
+      usedFallback=true;
+      payrollState={ rows: merged.map((w,i)=>({
+        '發放ID':'tmp'+i, '期間':month, '工班':w.crew, '員工ID':w.empId, '姓名':w.name,
+        '出勤天數':w.days, '日薪':w.dailyWage, '應發薪資':w.gross, '勞報單':w.hasReceipt?'是':'否',
+        '扣繳':w.deduction, '代買材料':0, '實發合計':w.net, '發放狀態':'未發放', '發放日期':'', '發放方式':''
+      })), month };
+    }
     renderPayrollTable();
+    if (usedFallback) toast('已算出薪資，但費用系統後端尚未更新（發放無法儲存）。請重新部署費用後端新版本。','error');
+    if (noReceiptInfo) toast('部分工班勞報單扣繳資訊抓不到，實發暫未扣 7%（需管理員權限才會帶入）。','');
+    if (problems.length) toast('部分工班未帶入：'+problems.join('；'),'');
   } catch(err) { area.innerHTML=errMsg(err); }
 }
 
@@ -2176,4 +2245,3 @@ function closeModal(){ const m=document.getElementById('app-modal'); if(m) m.rem
 </script>
 </body>
 </html>
-
