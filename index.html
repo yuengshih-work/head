@@ -1,0 +1,2249 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>工程費用管理 — Efforte</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --green:#1D9E75;--green-dk:#0F6E56;--green-lt:#E1F5EE;
+  --bg:#f4f5f7;--white:#fff;--border:#e4e6ea;
+  --text:#1a1a1a;--muted:#6b7280;--danger:#dc2626;--warn:#d97706;
+  --radius:10px;--nav-h:60px
+}
+body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;padding-bottom:var(--nav-h)}
+
+/* ── 登入 ── */
+.login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-card{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:40px 32px;width:340px;max-width:92vw;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-logo{font-size:36px;margin-bottom:8px}
+.login-title{font-size:20px;font-weight:700;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+.login-hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+.login-err{font-size:12px;color:var(--danger);margin-top:10px;min-height:18px}
+.login-spin{font-size:13px;color:var(--muted);margin-top:10px;display:none}
+
+/* ── 頂欄 ── */
+.topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100}
+.topbar-logo{font-size:15px;font-weight:700;color:var(--green);flex:1}
+.topbar-user{font-size:12px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-logout{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--white);color:var(--muted);cursor:pointer;white-space:nowrap}
+
+/* ── 底部導覽 ── */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);background:var(--white);border-top:1px solid var(--border);display:flex;z-index:200;safe-area-inset-bottom:env(safe-area-inset-bottom)}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-size:10px;border:none;background:transparent;padding:6px 0;transition:color .15s}
+.nav-btn .ni{font-size:20px;line-height:1}
+.nav-btn.active{color:var(--green)}
+.nav-btn.active .ni{transform:scale(1.1)}
+
+/* ── 內容區 ── */
+.content{padding:14px 14px 8px;max-width:680px;margin:0 auto}
+
+/* ── 頁面 ── */
+.page{display:none}.page.active{display:block}
+
+/* ── 元件 ── */
+.card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.card-body{padding:14px 16px}
+.section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
+.section-hd h3{font-size:14px;font-weight:600}
+
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.stat{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.stat-value{font-size:20px;font-weight:700}
+.stat-value.green{color:var(--green)}
+.stat-value.warn{color:var(--warn)}
+.stat-value.danger{color:var(--danger)}
+
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);font-family:inherit;white-space:nowrap;transition:background .15s}
+.btn:hover{background:#f3f4f6}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn.primary:hover{background:var(--green-dk)}
+.btn.sm{padding:5px 10px;font-size:12px}
+.btn.danger{color:var(--danger);border-color:#fca5a5}
+.btn.full{width:100%;justify-content:center}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.paid{background:#dcfce7;color:#15803d}
+.badge.unpaid{background:#fef9c3;color:#92400e}
+.badge.tax{background:#dbeafe;color:#1e40af}
+.badge.notax{background:#f3f4f6;color:#6b7280}
+.badge.active-s{background:var(--green-lt);color:var(--green-dk)}
+.badge.done-s{background:#f3f4f6;color:#6b7280}
+
+/* ── 表單 ── */
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field input,.field select,.field textarea{padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;color:var(--text);background:var(--white);width:100%}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(29,158,117,.1)}
+.field textarea{resize:vertical;min-height:64px}
+.field input[type=file]{padding:6px 8px;font-size:13px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:400px){.form-row{grid-template-columns:1fr}}
+
+.toggle-grp{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.toggle-grp button{flex:1;padding:9px 6px;font-size:13px;border:none;cursor:pointer;background:var(--white);color:var(--muted);font-family:inherit;transition:all .15s}
+.toggle-grp button.active{background:var(--green);color:#fff;font-weight:600}
+
+/* ── 日期區間 ── */
+.date-range{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.date-range input[type=date]{padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text);background:var(--white);flex:1;min-width:120px}
+.date-range span{font-size:12px;color:var(--muted);white-space:nowrap}
+.quick-btns{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.quick-btns button{padding:4px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--white);cursor:pointer;color:var(--muted)}
+.quick-btns button:hover{background:var(--green-lt);border-color:var(--green);color:var(--green-dk)}
+
+/* ── 表格（可橫滑）── */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:460px}
+th{text-align:left;padding:8px 10px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:active td{background:#fafafa}
+.tfoot-row td{font-weight:700;background:#f7f8f9;border-top:1px solid var(--border);border-bottom:none}
+
+/* ── 人力列 ── */
+.labor-row{padding:10px 0;border-bottom:1px solid #f0f0f0}
+.labor-row:last-child{border-bottom:none}
+.labor-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.labor-avatar{width:32px;height:32px;border-radius:50%;background:var(--green-lt);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--green-dk);flex-shrink:0}
+.labor-name{font-weight:600;font-size:13px}
+.labor-meta{font-size:11px;color:var(--muted)}
+.labor-wage{margin-left:auto;font-size:14px;font-weight:700}
+.labor-sites{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.site-field label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+.site-field select{width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit}
+
+/* ── 附件 ── */
+.attach-preview{margin-top:6px;font-size:12px;color:var(--green-dk)}
+.attach-preview a{color:var(--green-dk);text-decoration:underline}
+
+/* ── 工具 ── */
+.empty{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+.loading-box{text-align:center;padding:24px;color:var(--muted);font-size:13px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:calc(var(--nav-h) + 12px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.toast.success{background:#15803d}
+.toast.error{background:var(--danger)}
+.info-box{background:var(--green-lt);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--green-dk);margin-bottom:12px}
+hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
+/* ── 付款狀態 ── */
+.badge.request{background:#fce7f3;color:#9d174d}
+.badge.income{background:#dcfce7;color:#14532d}
+.badge.unpaid-inc{background:#fef9c3;color:#92400e}
+/* ── 合約卡片 ── */
+.contract-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.contract-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+.contract-title{font-size:14px;font-weight:600}
+.contract-meta{font-size:11px;color:var(--muted);margin-top:3px}
+.contract-amount{font-size:18px;font-weight:700;color:var(--green);text-align:right;flex-shrink:0}
+.contract-amount .tax-tag{font-size:11px;font-weight:400;color:var(--muted);display:block}
+.receipt-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.receipt-row:last-child{border-bottom:none}
+/* ── 底部導覽6格 ── */
+</style>
+</head>
+<body>
+
+<!-- 登入 -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">⚙</div>
+    <div class="login-title">工程費用管理系統</div>
+    <div class="login-sub">Efforte Corporation</div>
+    <div id="g_signin_btn"></div>
+    <div class="login-err" id="login-err"></div>
+    <div class="login-spin" id="login-spin"><span class="spinner"></span>驗證中…</div>
+    <div class="login-hr"></div>
+    <div style="font-size:11px;color:var(--muted)">僅限授權人員登入</div>
+  </div>
+</div>
+
+<!-- 主介面 -->
+<div id="main-shell" style="display:none">
+  <!-- 頂欄 -->
+  <div class="topbar">
+    <div class="topbar-logo">⚙ 費用管理</div>
+    <div class="topbar-user" id="user-badge"></div>
+    <button class="btn-logout" onclick="signOut()">登出</button>
+  </div>
+
+  <!-- 內容 -->
+  <div class="content">
+    <!-- 總覽 -->
+    <div id="page-dashboard" class="page active">
+      <div class="section-hd" style="margin-bottom:10px">
+        <h3 id="dash-title">本月總覽</h3>
+      </div>
+      <div class="quick-btns" id="dash-quick"></div>
+      <div class="date-range">
+        <input type="date" id="dash-start">
+        <span>至</span>
+        <input type="date" id="dash-end">
+        <button class="btn sm primary" onclick="loadDashboard()">查詢</button>
+      </div>
+      <div id="dash-content"><div class="loading-box"><span class="spinner"></span>載入中…</div></div>
+    </div>
+
+    <!-- 人力費用 -->
+    <div id="page-labor" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>載入出工資料</h3></div>
+        <div class="field" style="margin-bottom:10px"><label>工班</label>
+          <div class="toggle-grp" id="crew-toggle"></div>
+        </div>
+        <div class="quick-btns" id="labor-quick"></div>
+        <div class="date-range" style="margin-bottom:10px">
+          <input type="date" id="labor-start">
+          <span>至</span>
+          <input type="date" id="labor-end">
+        </div>
+        <button class="btn primary full" onclick="loadLaborFromCrew()">⬇ 從打卡系統載入</button>
+        <div id="labor-status" style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center"></div>
+      </div></div>
+
+      <div class="card" id="labor-card" style="display:none"><div class="card-body">
+        <div class="section-hd">
+          <h3>人力分配</h3>
+          <span style="font-size:11px;color:var(--muted)">可手動調整案場</span>
+        </div>
+        <div class="info-box">若上午/下午在不同案場，請分別選擇，費用自動各拆一半</div>
+        <div id="labor-list"></div>
+
+        <!-- 代墊款區塊 -->
+        <div id="advance-section" style="display:none">
+          <hr class="divider">
+          <div class="section-hd" style="margin-bottom:8px">
+            <h3>本期代墊款</h3>
+            <span style="font-size:11px;color:var(--muted)">儲存時自動同步至案場支出</span>
+          </div>
+          <div id="advance-list"></div>
+        </div>
+
+        <hr class="divider">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px;color:var(--muted)">人力小計 <strong id="labor-total" style="font-size:16px;color:var(--text)">$0</strong></div>
+          <button class="btn primary" onclick="saveLaborAlloc()">💾 儲存分配</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- 案場支出 -->
+    <div id="page-expense" class="page">
+      <!-- 新增表單 -->
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>新增支出紀錄</h3></div>
+        <div class="form-row">
+          <div class="field"><label>案場</label>
+            <select id="exp-site"></select>
+          </div>
+          <div class="field"><label>日期</label>
+            <input type="date" id="exp-date">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>廠商／供應商</label>
+            <input type="text" id="exp-vendor" placeholder="例：大成五金">
+          </div>
+          <div class="field"><label>品項說明</label>
+            <input type="text" id="exp-desc" placeholder="例：防水PU材料">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>金額（元）</label>
+            <input type="number" id="exp-amount" placeholder="0" min="0">
+          </div>
+          <div class="field"><label>發票號碼（選填）</label>
+            <input type="text" id="exp-invoice" placeholder="例：AB12345678">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>發票狀態</label>
+            <div class="toggle-grp">
+              <button id="btn-tax" class="active" onclick="setTax(true)">含稅開發票</button>
+              <button id="btn-notax" onclick="setTax(false)">未稅無發票</button>
+            </div>
+          </div>
+          <div class="field"><label>付款狀態</label>
+            <div class="toggle-grp">
+              <button id="btn-unpaid" class="active" onclick="setPayStatus('未付')">未付</button>
+              <button id="btn-request" onclick="setPayStatus('需請款')">需請款</button>
+              <button id="btn-paid" onclick="setPayStatus('已付')">已付</button>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label>附件（圖片或 PDF，選填）</label>
+          <input type="file" id="exp-file" accept="image/*,application/pdf">
+          <div class="attach-preview" id="exp-file-preview"></div>
+        </div>
+        <div id="exp-request-row" style="display:none" class="form-row">
+          <div class="field"><label>請款人員</label>
+            <select id="exp-request-by"><option value="">— 選擇 —</option></select>
+          </div>
+        </div>
+        <div id="exp-paymethod-row" style="display:none" class="field">
+          <label>出帳方式</label>
+          <div class="toggle-grp">
+            <button id="pm-cash" class="active" onclick="setPayMethod('現金')">現金</button>
+            <button id="pm-transfer" onclick="setPayMethod('匯款')">匯款</button>
+            <button id="pm-check" onclick="setPayMethod('支票')">支票</button>
+          </div>
+        </div>
+        <div class="field"><label>備註（選填）</label>
+          <textarea id="exp-note" placeholder=""></textarea>
+        </div>
+        <button class="btn primary full" onclick="submitExpense()">＋ 新增紀錄</button>
+      </div></div>
+
+      <!-- 同步代墊款 -->
+      <div class="card"><div class="card-body">
+        <div class="section-hd">
+          <h3>同步打卡系統代墊款</h3>
+          <button class="btn sm primary" onclick="syncAdvancePayments()">⟳ 同步</button>
+        </div>
+        <div class="date-range" style="margin-bottom:8px">
+          <input type="date" id="adv-sync-start">
+          <span>至</span>
+          <input type="date" id="adv-sync-end">
+        </div>
+        <div style="font-size:11px;color:var(--muted)">從各工班打卡系統匯入代墊款。已匯入的會更新付款狀態、發票、金額等，不覆蓋手動修改的請款人員/出帳方式。</div>
+        <div id="adv-sync-result" style="font-size:12px;margin-top:8px"></div>
+      </div></div>
+
+      <!-- 明細列表 -->
+      <div class="card"><div class="card-body">
+        <div class="section-hd">
+          <h3>支出明細</h3>
+          <select id="filter-paid" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit" onchange="loadExpenses()">
+            <option value="">全部</option>
+            <option value="未付">未付</option>
+            <option value="需請款">需請款</option>
+            <option value="已付">已付</option>
+          </select>
+        </div>
+        <div class="quick-btns" id="exp-quick"></div>
+        <div class="date-range">
+          <input type="date" id="exp-start">
+          <span>至</span>
+          <input type="date" id="exp-end">
+          <select id="filter-site" style="font-size:12px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;flex:1;min-width:100px"></select>
+          <button class="btn sm primary" onclick="loadExpenses()">查詢</button>
+        </div>
+        <div id="expense-wrap"><div class="loading-box"><span class="spinner"></span>載入中…</div></div>
+      </div></div>
+    </div>
+
+
+    <!-- 收入 -->
+    <div id="page-income" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd">
+          <h3>新增合約</h3>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>案場</label><select id="inc-site"></select></div>
+          <div class="field"><label>合約說明</label><input type="text" id="inc-desc" placeholder="例：外牆防水工程"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>合約金額（元）</label><input type="number" id="inc-amount" placeholder="0" min="0"></div>
+          <div class="field"><label>含稅狀態</label>
+            <div class="toggle-grp">
+              <button id="inc-btn-tax" class="active" onclick="setIncTax(true)">含稅</button>
+              <button id="inc-btn-notax" onclick="setIncTax(false)">未稅</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>施工開始</label><input type="date" id="inc-start"></div>
+          <div class="field"><label>施工結束</label><input type="date" id="inc-end"></div>
+        </div>
+        <div class="field"><label>備註（選填）</label><textarea id="inc-note" placeholder="施工範圍、業主資訊…"></textarea></div>
+        <button class="btn primary full" onclick="submitContract()">＋ 新增合約</button>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <div class="section-hd">
+          <h3>合約列表</h3>
+          <select id="inc-filter-site" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit" onchange="loadContracts()">
+            <option value="">所有案場</option>
+          </select>
+        </div>
+        <div id="contract-list"><div class="loading-box"><span class="spinner"></span>載入中…</div></div>
+      </div></div>
+    </div>
+
+    <!-- 報表 -->
+    <!-- 薪資發放 -->
+    <div id="page-payroll" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>薪資發放</h3></div>
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="field" style="margin:0"><label>發放月份</label>
+            <input type="month" id="pay-month">
+          </div>
+          <div class="field" style="margin:0"><label>工班</label>
+            <select id="pay-crew"><option value="">全部工班</option></select>
+          </div>
+        </div>
+        <button class="btn primary full" onclick="loadPayroll()">⬇ 載入本期薪資</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">
+          從各工班打卡系統彙總本月薪資並寫入本系統。未發放＝應付薪資；標記發放後即計入成本。
+        </div>
+      </div></div>
+      <div id="payroll-area"></div>
+    </div>
+
+    <!-- 報表 -->
+    <div id="page-report" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>報表查詢</h3></div>
+        <div class="quick-btns" id="rpt-quick"></div>
+        <div class="date-range">
+          <input type="date" id="rpt-start">
+          <span>至</span>
+          <input type="date" id="rpt-end">
+        </div>
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="field" style="margin:0"><label>案場</label>
+            <select id="rpt-site"></select>
+          </div>
+          <div class="field" style="margin:0"><label>報表類型</label>
+            <div class="toggle-grp">
+              <button id="rpt-site-btn" class="active" onclick="setRptType('site')">案場</button>
+              <button id="rpt-date-btn" onclick="setRptType('date')">日期</button>
+              <button id="rpt-month-btn" onclick="setRptType('month')">月結</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn primary full" onclick="loadReport()">產生報表</button>
+      </div></div>
+      <div id="report-area"></div>
+    </div>
+
+    <!-- 設定 -->
+    <div id="page-settings" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>費用系統 URL</h3></div>
+        <div class="field"><label>Apps Script URL</label>
+          <input type="text" id="cost-url" placeholder="https://script.google.com/macros/s/…/exec">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm" onclick="testCostUrl()">測試連線</button>
+          <button class="btn sm primary" onclick="saveCostUrl()">儲存</button>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>工班設定</h3>
+          <button class="btn sm" onclick="addCrewDialog()">＋ 新增</button>
+        </div>
+        <div id="crew-list"></div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>案場管理</h3>
+          <button class="btn sm primary" onclick="syncSitesFromCrews()">⟳ 從工班同步</button>
+        </div>
+        <div id="site-list-settings"></div>
+        <hr class="divider">
+        <div style="display:flex;gap:8px">
+          <input type="text" id="new-site-name" placeholder="手動新增案場名稱" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+          <button class="btn primary" onclick="addSiteManual()">＋</button>
+        </div>
+      </div></div>
+    </div>
+  </div><!-- /content -->
+
+  <!-- 底部導覽 -->
+  <div class="bottom-nav">
+    <button class="nav-btn active" onclick="showPage('dashboard')" id="nav-dashboard">
+      <span class="ni">📊</span><span>總覽</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('labor')" id="nav-labor">
+      <span class="ni">👷</span><span>人力</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('income')" id="nav-income">
+      <span class="ni">💰</span><span>收入</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('expense')" id="nav-expense">
+      <span class="ni">🧾</span><span>支出</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('payroll')" id="nav-payroll">
+      <span class="ni">💵</span><span>薪資</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('report')" id="nav-report">
+      <span class="ni">📈</span><span>報表</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('settings')" id="nav-settings">
+      <span class="ni">⚙</span><span>設定</span>
+    </button>
+  </div>
+</div><!-- /main-shell -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════
+//  授權
+// ═══════════════════════════════════════
+const ADMIN_EMAILS = ['s986013@gmail.com','e0938910726@gmail.com','yuengshih@gmail.com','daifar168@gmail.com'];
+let currentUser = null;
+
+window.handleCredentialResponse = function(resp) {
+  document.getElementById('login-spin').style.display = '';
+  document.getElementById('login-err').textContent = '';
+  try {
+    const b64 = resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    const pad = b64 + '=='.slice(0,(4-b64.length%4)%4);
+    const payload = JSON.parse(decodeURIComponent(atob(pad).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+    const email = (payload.email||'').toLowerCase().trim();
+    if (!ADMIN_EMAILS.includes(email)) {
+      document.getElementById('login-spin').style.display='none';
+      document.getElementById('login-err').textContent='❌ 此帳號無存取權限（'+email+'）';
+      return;
+    }
+    currentUser = {email, name: payload.name||email};
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('main-shell').style.display='block';
+    document.getElementById('login-spin').style.display='none';
+    document.getElementById('user-badge').textContent = currentUser.name;
+    initApp();
+  } catch(err) {
+    document.getElementById('login-spin').style.display='none';
+    document.getElementById('login-err').textContent='登入解析失敗：'+err.message;
+  }
+};
+
+function signOut() {
+  if (!confirm('確定要登出？')) return;
+  if (typeof google!=='undefined') google.accounts.id.disableAutoSelect();
+  currentUser = null;
+  document.getElementById('main-shell').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+}
+
+(function(){
+  const s=document.createElement('script');
+  s.src='https://accounts.google.com/gsi/client';
+  s.onload=function(){
+    google.accounts.id.initialize({
+      client_id:'166343824840-ea4pb0vebgv6ofnpjddof5dfva8ro2tl.apps.googleusercontent.com',
+      callback:window.handleCredentialResponse, auto_select:false
+    });
+    google.accounts.id.renderButton(document.getElementById('g_signin_btn'),
+      {theme:'outline',size:'large',text:'signin_with',locale:'zh_TW',width:280});
+  };
+  document.head.appendChild(s);
+})();
+
+// ═══════════════════════════════════════
+//  設定 & 狀態
+// ═══════════════════════════════════════
+let CFG = {
+  costUrl:'https://script.google.com/macros/s/AKfycbzn8Uq3wuWEYyly6slzAGYWvWDjM-YCLbPCE3bh5iCoVz8TOfsUcHKCmXUcXDihaUYi9A/exec',
+  crewUrls:{
+    'A':'https://script.google.com/macros/s/AKfycbySGybq9MaGuUi5SSoNPidkrutr98Iuj8Fu_KGSxM3Igsh2dvqMh2iUASD3Fkjerk-qyQ/exec',
+    'B':'https://script.google.com/macros/s/AKfycbxMwNPDmeF7g3RxWSW32fYnxo7VepUe2IxmGwRK64QUGs3cCnvYt-MWLY7WIct32FBT6Q/exec'
+  },
+  sites:[], crews:[]
+};
+let laborState = { crew:'A', date:'', records:[], advances:[] };
+let expenseState = { hasTax:true, payStatus:'未付', payMethod:'現金', incTax:true };
+let rptType = 'site';
+
+function loadCfg() {
+  try {
+    const s=localStorage.getItem('efforte_cost_cfg');
+    if(s){
+      const saved=JSON.parse(s);
+      // 只還原 sites/crews 快取，URL 固定用程式碼內的
+      if(saved.sites&&saved.sites.length) CFG.sites=saved.sites;
+      if(saved.crews&&saved.crews.length) CFG.crews=saved.crews;
+    }
+  } catch(e){}
+}
+function saveCfg() { localStorage.setItem('efforte_cost_cfg',JSON.stringify(CFG)); }
+function dedupSites() {
+  const seen=new Set();
+  CFG.sites=CFG.sites.filter(s=>{ if(seen.has(s.name)) return false; seen.add(s.name); return true; });
+}
+
+// ═══════════════════════════════════════
+//  日期工具
+// ═══════════════════════════════════════
+function today() { return new Date().toISOString().slice(0,10); }
+function monthStart(d) { return (d||today()).slice(0,7)+'-01'; }
+function monthEnd(d) {
+  const t=d||today(), y=parseInt(t.slice(0,4)), m=parseInt(t.slice(5,7));
+  return new Date(y, m, 0).toISOString().slice(0,10);
+}
+function thisMonth() { const t=today(); return {s:monthStart(t), e:monthEnd(t)}; }
+function lastMonth() {
+  const n=new Date(); n.setDate(1); n.setMonth(n.getMonth()-1);
+  const s=n.toISOString().slice(0,10);
+  return {s:monthStart(s), e:monthEnd(s)};
+}
+function setDateRange(startId, endId, s, e) {
+  document.getElementById(startId).value=s;
+  document.getElementById(endId).value=e;
+}
+function buildQuickBtns(containerId, startId, endId, callback) {
+  const c=document.getElementById(containerId);
+  const btns=[
+    {label:'本月', fn:()=>{ const r=thisMonth(); setDateRange(startId,endId,r.s,r.e); if(callback)callback(); }},
+    {label:'上月', fn:()=>{ const r=lastMonth(); setDateRange(startId,endId,r.s,r.e); if(callback)callback(); }},
+    {label:'近7天', fn:()=>{ const e2=today(); const s2=new Date(Date.now()-6*864e5).toISOString().slice(0,10); setDateRange(startId,endId,s2,e2); if(callback)callback(); }},
+    {label:'近30天', fn:()=>{ const e2=today(); const s2=new Date(Date.now()-29*864e5).toISOString().slice(0,10); setDateRange(startId,endId,s2,e2); if(callback)callback(); }}
+  ];
+  c.innerHTML='';
+  btns.forEach(b=>{ const btn=document.createElement('button'); btn.textContent=b.label; btn.onclick=b.fn; c.appendChild(btn); });
+}
+
+// ═══════════════════════════════════════
+//  API
+// ═══════════════════════════════════════
+async function api(url, params) {
+  if (!url) throw new Error('尚未設定 Apps Script URL');
+  const res = await fetch(url+'?'+new URLSearchParams(params).toString());
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error||'未知錯誤');
+  return data;
+}
+async function costApi(params) { return api(CFG.costUrl, params); }
+async function crewApi(crew, params) {
+  const url = CFG.crewUrls[crew]||(CFG.crews.find(c=>c['工班代號']===crew)||{})['Apps Script URL']||'';
+  return api(url, params);
+}
+
+// ═══════════════════════════════════════
+//  案場選單工具
+// ═══════════════════════════════════════
+function buildSiteSelect(el, addAll) {
+  if (typeof el === 'string') el = document.getElementById(el);
+  if (!el) return;
+  const cur = el.value;
+  el.innerHTML = (addAll ? '<option value="">所有案場</option>' : '<option value="">— 選擇案場 —</option>') +
+    CFG.sites.map(s=>`<option value="${s.siteId||''}|${s.name}"${s.name===cur||((s.siteId||'')+'|'+s.name)===cur?' selected':''}>${s.name}</option>`).join('');
+}
+function parseSiteVal(val) {
+  if (!val||val==='|') return {siteId:'',name:''};
+  const parts=val.split('|'); return {siteId:parts[0]||'',name:parts[1]||parts[0]||''};
+}
+
+// ═══════════════════════════════════════
+//  路由
+// ═══════════════════════════════════════
+function showPage(p) {
+  document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('page-'+p).classList.add('active');
+  document.getElementById('nav-'+p).classList.add('active');
+  const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payroll:renderPayroll,report:renderReport,settings:renderSettings};
+  renders[p]();
+}
+
+// ═══════════════════════════════════════
+//  初始化
+// ═══════════════════════════════════════
+async function initApp() {
+  loadCfg();
+  // 預設日期
+  const t=today();
+  const {s,e}=thisMonth();
+  ['dash','labor','exp','rpt'].forEach(pfx=>{ setDateRange(pfx+'-start',pfx+'-end',s,e); });
+  buildCrewToggleUI();
+  if (CFG.costUrl) {
+    try {
+      const d=await costApi({action:'getSites'});
+      CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態']}));
+      dedupSites();
+      const d2=await costApi({action:'getCrews'});
+      CFG.crews=d2.crews||[];
+      CFG.crews.forEach(c=>{ if(c['Apps Script URL']) CFG.crewUrls[c['工班代號']]=c['Apps Script URL']; });
+      saveCfg();
+    } catch(e){}
+  }
+  buildAllSiteSelects();
+  buildQuickBtns('dash-quick','dash-start','dash-end',loadDashboard);
+  buildQuickBtns('labor-quick','labor-start','labor-end');
+  buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
+  buildQuickBtns('rpt-quick','rpt-start','rpt-end');
+  renderDashboard();
+}
+
+function buildAllSiteSelects() {
+  buildSiteSelect('exp-site', false);
+  buildSiteSelect('filter-site', true);
+  buildSiteSelect('rpt-site', true);
+}
+
+// ═══════════════════════════════════════
+//  總覽
+// ═══════════════════════════════════════
+async function renderDashboard() {
+  buildQuickBtns('dash-quick','dash-start','dash-end',loadDashboard);
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const c=document.getElementById('dash-content');
+  if (!CFG.costUrl) { c.innerHTML=noUrlMsg(); return; }
+  c.innerHTML='<div class="loading-box"><span class="spinner"></span>載入中…</div>';
+  const s=document.getElementById('dash-start').value;
+  const e=document.getElementById('dash-end').value;
+  document.getElementById('dash-title').textContent = s&&e ? `${s} 至 ${e}` : '本月總覽';
+  try {
+    // 用報表API取區間資料
+    const d=await costApi({action:'getReport',startDate:s,endDate:e});
+    const expenses=d.expenses||[], labor=d.labor||[];
+
+    const totalLabor=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
+    const totalExp=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
+    const totalUnpaid=expenses.filter(r=>String(r['付款狀態']||'').trim()!=='已付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+    const totalTax=expenses.filter(r=>r['含稅']==='是').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+    // 取得所有合約 + 所有收款（不限日期），用合約金額計算待收款
+    const [cd, rdAll] = await Promise.all([
+      costApi({action:'getContracts'}).catch(()=>({contracts:[]})),
+      costApi({action:'getReceipts'}).catch(()=>({receipts:[]}))
+    ]);
+    const allContracts = cd.contracts || [];
+    const allReceipts  = rdAll.receipts || [];
+
+    // 每份合約的已收款（用收款記錄表的「已收」加總）
+    const contractReceived = {};
+    allReceipts.filter(r=>r['收款狀態']==='已收').forEach(r=>{
+      const cid = r['合約ID'];
+      contractReceived[cid] = (contractReceived[cid]||0) + (Number(r['收款金額'])||0);
+    });
+
+    // 期間內已收款（依收款日期）
+    const totalReceived = allReceipts
+      .filter(r=>r['收款狀態']==='已收' && r['收款日期']>=s && r['收款日期']<=e)
+      .reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
+
+    // 待收款 = 所有「未完成」合約的（合約金額 − 已收款）總和
+    const totalPending = allContracts
+      .filter(c=>c['狀態']!=='已完成')
+      .reduce((a,c)=>{
+        const amt = Number(c['合約金額'])||0;
+        const got = contractReceived[c['合約ID']]||0;
+        return a + Math.max(0, amt-got);
+      },0);
+
+    // 依案場彙總
+    const siteMap={};
+    const ensureSite=name=>{ if(!siteMap[name]) siteMap[name]={labor:0,expense:0,unpaid:0,received:0,pending:0}; };
+    labor.forEach(r=>{
+      [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{
+        if(!site) return; ensureSite(site);
+        siteMap[site].labor+=Number(amt)||0;
+      });
+    });
+    expenses.forEach(r=>{
+      const site=r['案場名稱']||'未分類'; ensureSite(site);
+      siteMap[site].expense+=Number(r['金額'])||0;
+      if(String(r['付款狀態']||'').trim()!=='已付') siteMap[site].unpaid+=Number(r['金額'])||0;
+    });
+    // 案場已收款：依案場彙總「已收」記錄
+    allReceipts.filter(r=>r['收款狀態']==='已收').forEach(r=>{
+      const site=r['案場名稱']||'未分類'; ensureSite(site);
+      siteMap[site].received+=Number(r['收款金額'])||0;
+    });
+    // 案場待收款：依案場彙總未完成合約的剩餘
+    allContracts.filter(c=>c['狀態']!=='已完成').forEach(c=>{
+      const site=c['案場名稱']||'未分類'; ensureSite(site);
+      const amt = Number(c['合約金額'])||0;
+      const got = contractReceived[c['合約ID']]||0;
+      siteMap[site].pending += Math.max(0, amt-got);
+    });
+
+    const siteRows=Object.entries(siteMap).map(([name,v])=>`
+      <tr>
+        <td>${name}</td>
+        <td>${fmt(v.labor)}</td>
+        <td>${fmt(v.expense)}</td>
+        <td>${fmt(v.labor+v.expense)}</td>
+        <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'<span class="badge paid">結清</span>'}</td>
+        <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
+        <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
+      </tr>`).join('');
+
+    c.innerHTML=`
+      <div class="stat-row">
+        <div class="stat"><div class="stat-label">人力費用</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
+        <div class="stat"><div class="stat-label">案場支出合計</div><div class="stat-value">${fmt(totalExp)}</div></div>
+        <div class="stat"><div class="stat-label">已收款</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
+        <div class="stat"><div class="stat-label">待收款</div><div class="stat-value ${totalPending>0?'warn':''}">${fmt(totalPending)}</div></div>
+        <div class="stat"><div class="stat-label">未付支出</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
+        <div class="stat"><div class="stat-label">含稅金額</div><div class="stat-value">${fmt(totalTax)}</div></div>
+      </div>
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>各案場費用</h3></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>支出合計</th><th>未付</th><th>已收款</th><th>待收款</th></tr></thead>
+          <tbody>${siteRows||'<tr><td colspan="7" class="empty">本期無資料</td></tr>'}</tbody>
+        </table></div>
+      </div></div>`;
+  } catch(err) { c.innerHTML=errMsg(err); }
+}
+
+// ═══════════════════════════════════════
+//  人力費用
+// ═══════════════════════════════════════
+function renderLabor() {
+  buildCrewToggleUI();
+  buildQuickBtns('labor-quick','labor-start','labor-end');
+}
+
+function buildCrewToggleUI() {
+  const el=document.getElementById('crew-toggle');
+  if (!el) return;
+  const crews=CFG.crews.length ? CFG.crews : [{工班代號:'A',工班名稱:'A工班'},{工班代號:'B',工班名稱:'B工班'}];
+  el.innerHTML=crews.map(c=>`<button id="crew-btn-${c['工班代號']}" class="${laborState.crew===c['工班代號']?'active':''}" onclick="selectCrew('${c['工班代號']}')">${c['工班名稱']||c['工班代號']+'工班'}</button>`).join('');
+}
+
+function selectCrew(code) {
+  laborState.crew=code;
+  document.querySelectorAll('#crew-toggle button').forEach(b=>b.classList.toggle('active',b.id==='crew-btn-'+code));
+}
+
+async function loadLaborFromCrew() {
+  const startDate=document.getElementById('labor-start').value;
+  const endDate=document.getElementById('labor-end').value;
+  if (!startDate||!endDate) { toast('請選擇日期區間','error'); return; }
+  laborState.startDate=startDate;
+  laborState.endDate=endDate;
+  // 仍保留 date 供舊邏輯相容
+  laborState.date=startDate;
+  const crew=laborState.crew;
+  const url=CFG.crewUrls[crew]||(CFG.crews.find(c=>c['工班代號']===crew)||{})['Apps Script URL']||'';
+  if (!url) { toast(crew+'工班尚未設定 URL','error'); return; }
+  const status=document.getElementById('labor-status');
+  status.innerHTML='<span class="spinner"></span>載入中…';
+  try {
+    // 逐日產生日期清單
+    const dates=[];
+    let cur=new Date(startDate);
+    const end=new Date(endDate);
+    while(cur<=end){ dates.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+
+    // 對每一天並行抓資料
+    const results=await Promise.all(dates.map(d=>Promise.all([
+      crewApi(crew,{action:'getLaborByDate',date:d}).catch(()=>({records:[]})),
+      crewApi(crew,{action:'getAdvancePayments',startDate:d,endDate:d}).catch(()=>({records:[]}))
+    ])));
+
+    // 合併所有日期的記錄
+    const allRecords=[], allAdvances=[];
+    results.forEach(([d,adv],i)=>{
+      (d.records||[]).forEach(r=>{ r._date=dates[i]; allRecords.push(r); });
+      (adv.records||[]).forEach(r=>allAdvances.push(r));
+    });
+
+    laborState.records=allRecords;
+    laborState.advances=allAdvances;
+    renderLaborList();
+    renderAdvanceList();
+    const adv=laborState.advances.length;
+    const dateLabel=startDate===endDate?startDate:`${startDate} ~ ${endDate}`;
+    status.textContent=`${dateLabel}｜已載入 ${allRecords.length} 筆出工${adv>0?'、'+adv+' 筆代墊款':''}`;
+    document.getElementById('labor-card').style.display='';
+    if (!allRecords.length) toast('該期間無出工記錄');
+  } catch(err) {
+    status.textContent='';
+    toast('載入失敗：'+err.message,'error');
+  }
+}
+
+function renderLaborList() {
+  const activeSites=CFG.sites.filter(s=>s.status==='進行中');
+  const opts=(def)=>activeSites.map(s=>`<option value="${s.name}"${s.name===def?' selected':''}>${s.name}</option>`).join('');
+  const el=document.getElementById('labor-list');
+  if (!laborState.records.length) { el.innerHTML='<div class="empty">無出工紀錄</div>'; updateLaborTotal(); return; }
+  el.innerHTML=laborState.records.map((r,i)=>`
+    <div class="labor-row">
+      <div class="labor-top">
+        <div class="labor-avatar">${r.name.slice(0,1)}</div>
+        <div>
+          <div class="labor-name">${r.name} <span style="font-size:11px;color:var(--muted);font-weight:400">${r._date||''}</span></div>
+          <div class="labor-meta">${r.timeIn||'--:--'} – ${r.timeOut||'未下班'}</div>
+        </div>
+        <div class="labor-wage">${fmt(r.dailyWage)}</div>
+      </div>
+      <div class="labor-sites">
+        <div class="site-field"><label>上午案場</label>
+          <select id="am-${i}" onchange="updateLaborTotal()">
+            <option value="">— 未分配 —</option>${opts(r.site)}
+          </select>
+        </div>
+        <div class="site-field"><label>下午案場（留空=同上午）</label>
+          <select id="pm-${i}" onchange="updateLaborTotal()">
+            <option value="">— 同上午 —</option>${opts('')}
+          </select>
+        </div>
+      </div>
+    </div>`).join('');
+  updateLaborTotal();
+}
+
+function updateLaborTotal() {
+  const t=laborState.records.reduce((s,r)=>s+r.dailyWage,0);
+  document.getElementById('labor-total').textContent=fmt(t);
+}
+
+function renderAdvanceList() {
+  const sec=document.getElementById('advance-section');
+  const list=document.getElementById('advance-list');
+  if (!sec||!list) return;
+  const advs=laborState.advances||[];
+  if (!advs.length) { sec.style.display='none'; return; }
+  sec.style.display='';
+  list.innerHTML=advs.map(adv=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${adv.name}
+          <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px">${adv.date}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${adv.site} ／ ${adv.items||'代買材料'}</div>
+        ${adv.invoice?`<div style="font-size:11px;color:var(--muted)">發票：${adv.invoice}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:14px;font-weight:700">${fmt(adv.amount)}</div>
+        <div style="margin-top:2px">${adv.paid?'<span class="badge paid">已付</span>':'<span class="badge unpaid">未付</span>'}</div>
+      </div>
+    </div>`).join('');
+  // 代墊小計
+  const total=advs.reduce((s,a)=>s+(Number(a.amount)||0),0);
+  list.innerHTML+=`<div style="text-align:right;padding-top:8px;font-size:13px;color:var(--muted)">代墊小計 <strong style="font-size:15px;color:var(--text)">${fmt(total)}</strong></div>`;
+}
+
+async function saveLaborAlloc() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  // 依日期分組，每日各自儲存
+  const byDate={};
+  laborState.records.forEach((r,i)=>{
+    const d=r._date||laborState.date;
+    if(!byDate[d]) byDate[d]=[];
+    byDate[d].push({
+      empId:r.empId, name:r.name, dailyWage:r.dailyWage,
+      amSite:document.getElementById('am-'+i)?.value||'',
+      pmSite:document.getElementById('pm-'+i)?.value||''
+    });
+  });
+  try {
+    for(const [date,allocs] of Object.entries(byDate)){
+      await costApi({action:'saveLaborAlloc',date,crew:laborState.crew,allocations:JSON.stringify(allocs)});
+    }
+    toast('人力分配已儲存','success');
+    // 同步代墊款
+    const advs=laborState.advances||[];
+    if (advs.length>0) {
+      let synced=0,skipped=0;
+      for (const adv of advs) {
+        try {
+          const r=await costApi({action:'addExpense',date:adv.date,siteId:'',siteName:adv.site,
+            vendor:adv.name+'（代墊）',desc:adv.items||'代買材料',amount:adv.amount,
+            hasTax:adv.invoice?'true':'false',paid:adv.paid?'true':'false',
+            paidDate:adv.payDate||'',note:adv.invoice?'發票：'+adv.invoice:'無發票',
+            sourceType:'advance',sourceRecordId:adv.recordId});
+          if (r.skipped) skipped++; else synced++;
+        } catch(e){}
+      }
+      setTimeout(()=>toast(`已同步 ${synced} 筆代墊款`+(skipped>0?`（${skipped} 筆略過）`:''),'success'),800);
+    }
+  } catch(err) { toast('儲存失敗：'+err.message,'error'); }
+}
+
+// ═══════════════════════════════════════
+//  案場支出
+// ═══════════════════════════════════════
+function renderExpense() {
+  const t=today(); const {s,e}=thisMonth();
+  document.getElementById('exp-date').value=t;
+  if (!document.getElementById('exp-start').value) setDateRange('exp-start','exp-end',s,e);
+  if (!document.getElementById('adv-sync-start').value) setDateRange('adv-sync-start','adv-sync-end',s,e);
+  buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
+  buildSiteSelect('exp-site',false);
+  buildSiteSelect('filter-site',true);
+  loadExpenses();
+  document.getElementById('exp-file').onchange=function(){
+    const f=this.files[0];
+    document.getElementById('exp-file-preview').textContent=f?'已選：'+f.name:'';
+  };
+  // 預先載入員工名單填入請款人員下拉
+  loadEmployeeSelect('exp-request-by');
+}
+
+async function loadEmployeeSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const employees = await getEmployeeList();
+    if (!employees.length) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— 選擇 —</option>' +
+      employees.map(e=>`<option value="${e.name}" ${e.name===current?'selected':''}>${e.name}</option>`).join('');
+  } catch(e) {}
+}
+
+// 同步打卡系統代墊款（保留費用系統手動填的請款人員/出帳方式）
+async function syncAdvancePayments() {
+  const startDate = document.getElementById('adv-sync-start').value;
+  const endDate   = document.getElementById('adv-sync-end').value;
+  if (!startDate||!endDate) { toast('請選擇日期區間','error'); return; }
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+
+  const resultEl = document.getElementById('adv-sync-result');
+  resultEl.innerHTML = '<span class="spinner"></span>同步中…';
+
+  let totalNew = 0, totalUpdated = 0, totalSkipped = 0;
+  const errors = [];
+
+  const crews = CFG.crews.length ? CFG.crews : [{工班代號:'A'},{工班代號:'B'}];
+
+  for (const crew of crews) {
+    const code = crew['工班代號'];
+    const url = CFG.crewUrls[code] || crew['Apps Script URL'] || '';
+    if (!url) continue;
+    try {
+      const d = await api(url, { action:'getAdvancePayments', startDate, endDate });
+      const advances = d.records || [];
+      for (const adv of advances) {
+        try {
+          const r = await costApi({
+            action: 'syncAdvanceExpense',
+            sourceRecordId: adv.recordId,
+            date: adv.date, siteName: adv.site,
+            vendor: adv.name+'（代墊）', desc: adv.items||'代買材料',
+            amount: adv.amount,
+            hasTax: adv.invoice?'true':'false',
+            invoice: adv.invoice||'',
+            payStatus: adv.paid?'已付':'未付',
+            paidDate: adv.payDate||'',
+            note: adv.invoice?'發票：'+adv.invoice:'無發票'
+          });
+          if (r.action==='created') totalNew++;
+          else if (r.action==='updated') totalUpdated++;
+          else totalSkipped++;
+        } catch(e) { errors.push(adv.name+' '+adv.date+': '+e.message); }
+      }
+    } catch(err) { errors.push(code+'工班: '+err.message); }
+  }
+
+  let msg = `✓ 同步完成 — 新增 ${totalNew} 筆，更新 ${totalUpdated} 筆`;
+  if (totalSkipped) msg += `，未變動 ${totalSkipped} 筆`;
+  if (errors.length) msg += `，錯誤 ${errors.length} 筆`;
+  resultEl.innerHTML = `<span style="color:${errors.length?'var(--danger)':'#15803d'};font-weight:500">${msg}</span>`;
+  if (errors.length) resultEl.innerHTML += `<div style="margin-top:4px;color:var(--muted);font-size:11px">${errors.slice(0,3).join('<br>')}</div>`;
+  toast(msg, errors.length ? 'error' : 'success');
+  loadExpenses();
+}
+
+function setTax(v) {
+  expenseState.hasTax=v;
+  document.getElementById('btn-tax').classList.toggle('active',v);
+  document.getElementById('btn-notax').classList.toggle('active',!v);
+}
+function setPayStatus(s) {
+  expenseState.payStatus=s;
+  ['未付','需請款','已付'].forEach(k=>{
+    const id={'未付':'btn-unpaid','需請款':'btn-request','已付':'btn-paid'}[k];
+    document.getElementById(id)?.classList.toggle('active',k===s);
+  });
+  document.getElementById('exp-request-row').style.display = s==='需請款'?'':'none';
+  document.getElementById('exp-paymethod-row').style.display = s==='已付'?'':'none';
+}
+function setPayMethod(m) {
+  expenseState.payMethod=m;
+  ['現金','匯款','支票'].forEach(k=>{
+    const id={'現金':'pm-cash','匯款':'pm-transfer','支票':'pm-check'}[k];
+    document.getElementById(id)?.classList.toggle('active',k===m);
+  });
+}
+function setIncTax(v) {
+  expenseState.incTax=v;
+  document.getElementById('inc-btn-tax')?.classList.toggle('active',v);
+  document.getElementById('inc-btn-notax')?.classList.toggle('active',!v);
+}
+
+async function submitExpense() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const siteVal=document.getElementById('exp-site').value;
+  const {siteId,name:siteName}=parseSiteVal(siteVal);
+  const vendor=document.getElementById('exp-vendor').value.trim();
+  const desc=document.getElementById('exp-desc').value.trim();
+  const amount=document.getElementById('exp-amount').value;
+  const invoice=document.getElementById('exp-invoice').value.trim();
+  if (!vendor||!desc||!amount) { toast('請填寫廠商、品項與金額','error'); return; }
+
+  const btn=document.querySelector('#page-expense .btn.primary.full');
+  btn.textContent='儲存中…'; btn.disabled=true;
+  try {
+    const r=await costApi({
+      action:'addExpense',
+      date:document.getElementById('exp-date').value,
+      siteId, siteName, vendor, desc, amount, invoice,
+      hasTax:expenseState.hasTax,
+      payStatus:expenseState.payStatus,
+      requestBy: expenseState.payStatus==='需請款' ? (document.getElementById('exp-request-by')?.value||'') : '',
+      payMethod: expenseState.payStatus==='已付' ? expenseState.payMethod : '',
+      paidDate: expenseState.payStatus==='已付' ? document.getElementById('exp-date').value : '',
+      note:document.getElementById('exp-note').value
+    });
+
+    // 上傳附件
+    const file=document.getElementById('exp-file').files[0];
+    if (file && r.expenseId && r.expenseId!=='duplicate_skipped') {
+      await uploadFile(file, r.expenseId);
+    }
+
+    // 清空表單
+    ['exp-vendor','exp-desc','exp-amount','exp-invoice','exp-note'].forEach(id=>{ document.getElementById(id).value=''; });
+    document.getElementById('exp-file').value='';
+    document.getElementById('exp-file-preview').textContent='';
+    toast('已新增支出紀錄','success');
+    loadExpenses();
+  } catch(err) { toast('新增失敗：'+err.message,'error'); }
+  finally { btn.textContent='＋ 新增紀錄'; btn.disabled=false; }
+}
+
+async function uploadFile(file, expenseId) {
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try {
+        const b64=btoa(String.fromCharCode(...new Uint8Array(e.target.result)));
+        await costApi({
+          action:'uploadAttachment', expenseId,
+          fileName:file.name, mimeType:file.type,
+          fileBase64:b64
+        });
+        resolve();
+      } catch(err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function loadExpenses() {
+  if (!CFG.costUrl) { document.getElementById('expense-wrap').innerHTML=noUrlMsg(); return; }
+  const wrap=document.getElementById('expense-wrap');
+  wrap.innerHTML='<div class="loading-box"><span class="spinner"></span>載入中…</div>';
+  try {
+    const s=document.getElementById('exp-start').value;
+    const e=document.getElementById('exp-end').value;
+    const siteVal=document.getElementById('filter-site')?.value||'';
+    const {siteId}=parseSiteVal(siteVal);
+    const paid=document.getElementById('filter-paid')?.value||'';
+    const data=await costApi({action:'getExpenses',startDate:s,endDate:e,siteId,paid});
+    const rows=data.expenses||[];
+    if (!rows.length) { wrap.innerHTML='<div class="empty">查無支出紀錄</div>'; return; }
+    const total=rows.reduce((a,r)=>a+(Number(r['金額'])||0),0);
+    wrap.innerHTML=`<div class="tbl-wrap"><table>
+      <thead><tr><th>日期</th><th>案場</th><th>廠商</th><th>品項</th><th>金額</th><th>發票</th><th>附件</th><th>狀態</th><th></th></tr></thead>
+      <tbody>${rows.map(r=>`
+        <tr>
+          <td style="white-space:nowrap">${r['日期'].slice(5)}</td>
+          <td>${r['案場名稱']}</td>
+          <td>${r['廠商名稱']}</td>
+          <td>${r['品項說明']}</td>
+          <td style="text-align:right;font-weight:600;white-space:nowrap">${fmt(r['金額'])}</td>
+          <td>${r['含稅']==='是'?'<span class="badge tax">含稅</span>':'<span class="badge notax">無</span>'}${r['發票號碼']?`<br><span style="font-size:10px;color:var(--muted)">${r['發票號碼']}</span>`:''}</td>
+          <td>${r['附件網址']?`<a href="${r['附件網址']}" target="_blank" style="font-size:12px;color:var(--green-dk)">📎</a>`:'—'}</td>
+          <td>
+            ${(()=>{const ps=String(r['付款狀態']||'').trim();return ps==='已付'?'<span class="badge paid">已付</span>':ps==='需請款'?'<span class="badge request">需請款</span>':'<span class="badge unpaid">未付</span>';})()}
+            ${r['出帳方式']?`<span style="font-size:10px;color:var(--muted);display:block">${r['出帳方式']}</span>`:''}
+            ${r['請款人員']?`<span style="font-size:10px;color:var(--muted);display:block">${r['請款人員']}</span>`:''}
+          </td>
+          <td style="white-space:nowrap;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            ${String(r['付款狀態']||'').trim()==='未付'?`<button class="btn sm" onclick="doRequestPayment('${r['記錄ID']}')">請款</button>`:''}
+            ${String(r['付款狀態']||'').trim()==='需請款'?`<button class="btn sm primary" onclick="doConfirmPayment('${r['記錄ID']}')">出帳</button>`:''}
+            <button class="btn sm" onclick="editExpenseDialog(${JSON.stringify(r).split('"').join('&quot;')})">✎</button>
+            <button class="btn sm danger" onclick="delExp('${r['記錄ID']}')">✕</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr class="tfoot-row"><td colspan="4" style="text-align:right">合計</td><td style="text-align:right">${fmt(total)}</td><td colspan="4"></td></tr></tfoot>
+    </table></div>`;
+  } catch(err) { wrap.innerHTML=errMsg(err); }
+}
+
+async function doRequestPayment(id) {
+  // 從員工清單選請款人員
+  const employees = await getEmployeeList();
+  const opts = employees.map(e=>`<option value="${e.name}">${e.name}</option>`).join('');
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:300px;max-width:90vw">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">請款申請</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">請款人員</div>
+    <select id="req-person" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+      ${opts||'<option>（請先載入員工資料）</option>'}
+    </select>
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style]').remove()">取消</button>
+      <button class="btn primary full" onclick="confirmRequestPayment('${id}')">確認</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function confirmRequestPayment(id) {
+  const person = document.getElementById('req-person')?.value||'';
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'requestPayment',expenseId:id,requestBy:person});
+    toast('已標記需請款','success'); loadExpenses();
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+async function doConfirmPayment(id) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:300px;max-width:90vw">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">確認出帳</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">出帳方式</div>
+    <div class="toggle-grp" style="margin-bottom:12px">
+      <button id="cp-cash" class="active" onclick="setCpMethod(this,'現金')">現金</button>
+      <button id="cp-transfer" onclick="setCpMethod(this,'匯款')">匯款</button>
+      <button id="cp-check" onclick="setCpMethod(this,'支票')">支票</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">付款日期</div>
+    <input type="date" id="cp-date" value="${today()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style]').remove()">取消</button>
+      <button class="btn primary full" onclick="confirmPaymentOut('${id}')">確認出帳</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+function setCpMethod(btn,m) {
+  document.querySelectorAll('#cp-cash,#cp-transfer,#cp-check').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  btn._method = m;
+}
+
+async function confirmPaymentOut(id) {
+  const activeBtn = document.querySelector('#cp-cash.active,#cp-transfer.active,#cp-check.active');
+  const methodMap = {'cp-cash':'現金','cp-transfer':'匯款','cp-check':'支票'};
+  const payMethod = methodMap[activeBtn?.id]||'現金';
+  const paidDate = document.getElementById('cp-date')?.value||today();
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'confirmPayment',expenseId:id,payMethod,paidDate});
+    toast('已確認出帳','success'); loadExpenses();
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+// 取得員工清單（從工班URL讀取，快取到記憶體）
+let _empCache = null;
+async function getEmployeeList() {
+  if (_empCache) return _empCache;
+  const results = [];
+  for (const crew of CFG.crews) {
+    const url = CFG.crewUrls[crew['工班代號']]||crew['Apps Script URL']||'';
+    if (!url) continue;
+    try {
+      const d = await api(url,{action:'getEmployees'});
+      (d.employees||[]).forEach(e=>{ if(!results.find(r=>r.name===e.name)) results.push(e); });
+    } catch(e){}
+  }
+  _empCache = results;
+  return results;
+}
+function editExpenseDialog(r) {
+  const sites = CFG.sites.filter(s=>s.status==='進行中');
+  const siteOpts = sites.map(s=>`<option value="${s.siteId}|${s.name}" ${s.name===r['案場名稱']?'selected':''}>${s.name}</option>`).join('');
+  const methods=['現金','匯款','支票'];
+  const pmBtns=methods.map(m=>`<button id="ee-pm-${m}" class="${r['出帳方式']===m?'active':''}" onclick="document.querySelectorAll('[id^=ee-pm-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:100%;margin:auto">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯支出</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">日期</div>
+        <input type="date" id="ee-date" value="${r['日期']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">案場</div>
+        <select id="ee-site" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${siteOpts}</select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">廠商</div>
+        <input type="text" id="ee-vendor" value="${r['廠商名稱']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">品項</div>
+        <input type="text" id="ee-desc" value="${r['品項說明']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">金額</div>
+        <input type="number" id="ee-amount" value="${r['金額']}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票號碼</div>
+        <input type="text" id="ee-invoice" value="${r['發票號碼']||''}" placeholder="選填" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票狀態</div>
+        <div class="toggle-grp">
+          <button id="ee-tax" class="${r['含稅']==='是'?'active':''}" onclick="document.getElementById('ee-tax').classList.add('active');document.getElementById('ee-notax').classList.remove('active')">含稅</button>
+          <button id="ee-notax" class="${r['含稅']!=='是'?'active':''}" onclick="document.getElementById('ee-notax').classList.add('active');document.getElementById('ee-tax').classList.remove('active')">未稅</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">付款狀態</div>
+        <div class="toggle-grp">
+          <button id="ee-st-未付" class="${r['付款狀態']==='未付'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">未付</button>
+          <button id="ee-st-需請款" class="${r['付款狀態']==='需請款'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">請款</button>
+          <button id="ee-st-已付" class="${r['付款狀態']==='已付'?'active':''}" onclick="document.querySelectorAll('[id^=ee-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">已付</button>
+        </div>
+      </div>
+    </div>
+    <div id="ee-paymethod-wrap" style="${r['付款狀態']==='已付'?'':'display:none'};margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">出帳方式</div>
+      <div class="toggle-grp">${pmBtns}</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">備註</div>
+      <input type="text" id="ee-note" value="${r['備註']||''}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitEditExpense('${r['記錄ID']}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  // 付款狀態切換時顯示/隱藏出帳方式
+  document.querySelectorAll('[id^=ee-st-]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.getElementById('ee-paymethod-wrap').style.display = b.id==='ee-st-已付' ? '' : 'none';
+    });
+  });
+}
+
+async function submitEditExpense(id) {
+  const siteVal = document.getElementById('ee-site')?.value||'';
+  const {siteId,name:siteName} = parseSiteVal(siteVal);
+  const activeSt = document.querySelector('[id^=ee-st-].active');
+  const payStatus = activeSt?.textContent==='請款'?'需請款':(activeSt?.textContent||'未付');
+  const activePm = document.querySelector('[id^=ee-pm-].active');
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({
+      action:'updateExpense', expenseId:id,
+      date:    document.getElementById('ee-date')?.value,
+      siteId, siteName,
+      vendor:  document.getElementById('ee-vendor')?.value,
+      desc:    document.getElementById('ee-desc')?.value,
+      amount:  document.getElementById('ee-amount')?.value,
+      invoice: document.getElementById('ee-invoice')?.value,
+      hasTax:  document.getElementById('ee-tax')?.classList.contains('active')?'true':'false',
+      payStatus,
+      payMethod: payStatus==='已付' ? (activePm?.textContent||'現金') : '',
+      note:    document.getElementById('ee-note')?.value
+    });
+    toast('支出已更新','success'); loadExpenses();
+  } catch(e) { toast('更新失敗','error'); }
+}
+
+async function delExp(id) {
+  if (!confirm('確定刪除此筆支出？')) return;
+  try { await costApi({action:'deleteExpense',expenseId:id}); toast('已刪除','success'); loadExpenses(); }
+  catch(e) { toast('刪除失敗','error'); }
+}
+
+
+// ═══════════════════════════════════════
+//  收入頁
+// ═══════════════════════════════════════
+function renderIncome() {
+  buildSiteSelect('inc-site', false);
+  buildSiteSelect('inc-filter-site', true);
+  loadContracts();
+}
+
+async function submitContract() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const siteVal = document.getElementById('inc-site').value;
+  const {siteId,name:siteName} = parseSiteVal(siteVal);
+  const desc = document.getElementById('inc-desc').value.trim();
+  const amount = document.getElementById('inc-amount').value;
+  if (!siteName||!amount) { toast('請填寫案場與合約金額','error'); return; }
+  try {
+    await costApi({
+      action:'addContract', siteId, siteName, desc, amount,
+      hasTax: expenseState.incTax,
+      startDate: document.getElementById('inc-start').value,
+      endDate:   document.getElementById('inc-end').value,
+      note: document.getElementById('inc-note').value
+    });
+    ['inc-desc','inc-amount','inc-start','inc-end','inc-note'].forEach(id=>{ document.getElementById(id).value=''; });
+    toast('合約已新增','success');
+    loadContracts();
+  } catch(err) { toast('新增失敗：'+err.message,'error'); }
+}
+
+async function loadContracts() {
+  if (!CFG.costUrl) { document.getElementById('contract-list').innerHTML=noUrlMsg(); return; }
+  const wrap = document.getElementById('contract-list');
+  wrap.innerHTML='<div class="loading-box"><span class="spinner"></span>載入中…</div>';
+  try {
+    const siteVal = document.getElementById('inc-filter-site')?.value||'';
+    const {siteId} = parseSiteVal(siteVal);
+    const [cd, rd] = await Promise.all([
+      costApi({action:'getContracts', siteId}),
+      costApi({action:'getReceipts',  siteId})
+    ]);
+    const contracts = cd.contracts||[];
+    const receipts  = rd.receipts||[];
+    if (!contracts.length) { wrap.innerHTML='<div class="empty">尚無合約</div>'; return; }
+
+    wrap.innerHTML = contracts.map(c => {
+      const cReceipts = receipts.filter(r=>r['合約ID']===c['合約ID']);
+      const totalReceived = cReceipts.filter(r=>r['收款狀態']==='已收').reduce((s,r)=>s+(Number(r['收款金額'])||0),0);
+      const totalPending  = cReceipts.filter(r=>r['收款狀態']==='未收').reduce((s,r)=>s+(Number(r['收款金額'])||0),0);
+      const amount = Number(c['合約金額'])||0;
+      const remaining = amount - totalReceived;
+      const period = (c['施工開始']||'') + (c['施工開始']&&c['施工結束']?' ~ ':'') + (c['施工結束']||'');
+
+      const isLocked = c['狀態']==='已完成';
+      const receiptRows = cReceipts.map(r=>`
+        <div class="receipt-row" style="${isLocked?'opacity:.75':''}">
+          <div style="flex:1">
+            <span style="font-weight:600">${fmt(r['收款金額'])}</span>
+            <span style="color:var(--muted);margin-left:6px;font-size:11px">${r['收款日期']||'未定日期'}</span>
+            ${r['付款方式']?`<span style="color:var(--muted);font-size:11px"> ／ ${r['付款方式']}</span>`:''}
+            ${r['備註']?`<div style="font-size:11px;color:var(--muted)">${r['備註']}</div>`:''}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            ${r['收款狀態']==='已收'
+              ? '<span class="badge income">已收</span>'
+              : (isLocked ? '<span class="badge notax">鎖定</span>'
+                : `<button class="btn sm primary" onclick="doConfirmReceipt('${r['收款ID']}')">確認收款</button>`)}
+            ${!isLocked ? `<button class="btn sm" onclick="editReceiptDialog('${r['收款ID']}','${r['收款金額']}','${r['收款日期']}','${r['付款方式']||''}','${r['備註']||''}','${r['收款狀態']}')">✎</button>` : ''}
+            ${!isLocked ? `<button class="btn sm danger" onclick="delReceipt('${r['收款ID']}')">✕</button>` : ''}
+          </div>
+        </div>`).join('');
+
+      return `<div class="contract-card">
+        <div class="contract-hd">
+          <div style="flex:1">
+            <div class="contract-title">${c['案場名稱']} ${c['合約說明']?'— '+c['合約說明']:''} ${c['狀態']==='已完成'?'<span style="font-size:11px;font-weight:400;color:#15803d">（已完成）</span>':''}</div>
+            <div class="contract-meta">
+              ${period?period+'　':''}
+              <span class="badge ${c['含稅']==='是'?'tax':'notax'}">${c['含稅']==='是'?'含稅':'未稅'}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="contract-amount">${fmt(amount)}<span class="tax-tag">合約金額</span></div>
+            ${totalReceived>0?`<div style="font-size:11px;color:#15803d">已收 ${fmt(totalReceived)}</div>`:''}
+            ${remaining>0?`<div style="font-size:11px;color:var(--warn)">待收 ${fmt(remaining)}</div>`:''}
+          </div>
+        </div>
+        ${c['備註']?`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${c['備註']}</div>`:''}
+
+        <!-- 發票記錄區 -->
+        <div style="border-top:1px solid #f0f0f0;padding-top:8px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px">發票記錄</span>
+            ${!isLocked?`<button class="btn sm" style="font-size:11px;padding:3px 8px" onclick="addInvoiceDialog('${c['合約ID']}','${c['案場名稱'].replace(/'/g,'')}')">＋ 新增發票</button>`:''}
+          </div>
+          ${(()=>{
+            const invoices = parseInvoices(c['發票記錄']);
+            if (!invoices.length) return '<div style="font-size:11px;color:var(--muted)">尚無發票</div>';
+            const total = invoices.reduce((s,i)=>s+(Number(i.amount)||0),0);
+            return `<div>
+              ${invoices.map((inv,idx)=>`
+                <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">
+                  <span style="font-weight:600">${inv.number||'(無號碼)'}</span>
+                  <span style="color:var(--muted)">${inv.date||''}</span>
+                  <span style="margin-left:auto;font-weight:600">${fmt(inv.amount)}</span>
+                  ${!isLocked?`<button class="btn sm" style="font-size:10px;padding:2px 6px" onclick="editInvoiceDialog('${c['合約ID']}',${idx},'${(inv.number||'').replace(/'/g,'')}',${inv.amount||0},'${inv.date||''}')">✎</button>`:''}
+                  ${!isLocked?`<button class="btn sm danger" style="font-size:10px;padding:2px 6px" onclick="delInvoice('${c['合約ID']}',${idx})">✕</button>`:''}
+                </div>`).join('')}
+              <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px;padding-top:4px;border-top:1px dashed #e4e6ea">
+                發票總額 <strong style="color:var(--text)">${fmt(total)}</strong>
+                ${amount>0?` / 合約 ${Math.round(total/amount*100)}%`:''}
+              </div>
+            </div>`;
+          })()}
+        </div>
+
+        ${receiptRows?`<div style="border-top:1px solid #f0f0f0;padding-top:8px;margin-top:8px">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;margin-bottom:6px">收款記錄</div>
+          ${receiptRows}
+        </div>`:''}
+
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          ${isLocked
+            ? `<span style="font-size:12px;font-weight:500;color:#15803d;background:#dcfce7;padding:4px 12px;border-radius:20px">✓ 收款已完成</span>`
+            : `
+              <button class="btn sm primary" onclick="addReceiptDialog('${c['合約ID']}','${c['案場ID']}','${c['案場名稱'].replace(/'/g,'')}')">＋ 新增收款</button>
+              ${totalPending===0 && cReceipts.length>0
+                ? `<button class="btn sm" style="background:#15803d;color:#fff;border-color:#15803d" onclick="completeContract('${c['合約ID']}')">✓ 完成收款</button>`
+                : ''}
+              <button class="btn sm danger" onclick="delContract('${c['合約ID']}')">刪除合約</button>
+            `
+          }
+        </div>
+      </div>`;
+    }).join('');
+  } catch(err) { wrap.innerHTML=errMsg(err); }
+}
+
+function addReceiptDialog(contractId, siteId, siteName) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:340px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">新增收款 — ${siteName}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款金額</div>
+    <input type="number" id="rc-amount" placeholder="0" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">預計收款日期</div>
+    <input type="date" id="rc-date" value="${today()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">備註（選填）</div>
+    <input type="text" id="rc-note" placeholder="" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitReceipt('${contractId}','${siteId}','${siteName}')">新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function submitReceipt(contractId, siteId, siteName) {
+  const amount = document.getElementById('rc-amount')?.value;
+  const date   = document.getElementById('rc-date')?.value;
+  const note   = document.getElementById('rc-note')?.value||'';
+  if (!amount) { toast('請填寫收款金額','error'); return; }
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'addReceipt', contractId, siteId, siteName, amount, receiptDate:date, note});
+    toast('收款記錄已新增','success'); loadContracts();
+  } catch(err) { toast('新增失敗','error'); }
+}
+
+async function doConfirmReceipt(id) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:300px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">確認收款</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">收款方式</div>
+    <div class="toggle-grp" style="margin-bottom:12px">
+      <button id="rc-cash" class="active" onclick="document.querySelectorAll('#rc-cash,#rc-transfer,#rc-check').forEach(b=>b.classList.remove('active'));this.classList.add('active')">現金</button>
+      <button id="rc-transfer" onclick="document.querySelectorAll('#rc-cash,#rc-transfer,#rc-check').forEach(b=>b.classList.remove('active'));this.classList.add('active')">匯款</button>
+      <button id="rc-check" onclick="document.querySelectorAll('#rc-cash,#rc-transfer,#rc-check').forEach(b=>b.classList.remove('active'));this.classList.add('active')">支票</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">收款日期</div>
+    <input type="date" id="rc-confirm-date" value="${today()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="confirmReceiptSubmit('${id}')">確認</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function confirmReceiptSubmit(id) {
+  const activeBtn = document.querySelector('#rc-cash.active,#rc-transfer.active,#rc-check.active');
+  const methodMap = {'rc-cash':'現金','rc-transfer':'匯款','rc-check':'支票'};
+  const payMethod = methodMap[activeBtn?.id]||'現金';
+  const receiptDate = document.getElementById('rc-confirm-date')?.value||today();
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'confirmReceipt', receiptId:id, payMethod, receiptDate});
+    toast('已確認收款','success'); loadContracts();
+  } catch(err) { toast('操作失敗','error'); }
+}
+
+function parseInvoices(str) {
+  if (!str) return [];
+  try {
+    const arr = typeof str === 'string' ? JSON.parse(str) : str;
+    return Array.isArray(arr) ? arr : [];
+  } catch(e) { return []; }
+}
+
+function addInvoiceDialog(contractId, siteName) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:320px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">新增發票 — ${siteName}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票號碼</div>
+    <input type="text" id="inv-number" placeholder="例：AB12345678" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票金額</div>
+    <input type="number" id="inv-amount" placeholder="0" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">開立日期</div>
+    <input type="date" id="inv-date" value="${today()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitInvoice('${contractId}')">新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  setTimeout(()=>document.getElementById('inv-number')?.focus(),50);
+}
+
+async function submitInvoice(contractId) {
+  const number = document.getElementById('inv-number')?.value.trim()||'';
+  const amount = document.getElementById('inv-amount')?.value;
+  const date = document.getElementById('inv-date')?.value;
+  if (!amount) { toast('請填寫發票金額','error'); return; }
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    // 取得目前合約 → 加上新發票 → 寫回
+    const cd = await costApi({action:'getContracts'});
+    const target = (cd.contracts||[]).find(c=>c['合約ID']===contractId);
+    if (!target) { toast('找不到合約','error'); return; }
+    const invoices = parseInvoices(target['發票記錄']);
+    invoices.push({ number, amount:Number(amount)||0, date });
+    await costApi({
+      action:'updateContract', contractId,
+      invoiceRecords: JSON.stringify(invoices)
+    });
+    toast('發票已新增','success');
+    loadContracts();
+  } catch(e) { toast('新增失敗：'+e.message,'error'); }
+}
+
+function editInvoiceDialog(contractId, idx, number, amount, date) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:320px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯發票</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票號碼</div>
+    <input type="text" id="einv-number" value="${number}" placeholder="例：AB12345678" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">發票金額</div>
+    <input type="number" id="einv-amount" value="${amount}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">開立日期</div>
+    <input type="date" id="einv-date" value="${date}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitEditInvoice('${contractId}',${idx})">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function submitEditInvoice(contractId, idx) {
+  const number = document.getElementById('einv-number')?.value.trim()||'';
+  const amount = document.getElementById('einv-amount')?.value;
+  const date = document.getElementById('einv-date')?.value;
+  if (!amount) { toast('請填寫發票金額','error'); return; }
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    const cd = await costApi({action:'getContracts'});
+    const target = (cd.contracts||[]).find(c=>c['合約ID']===contractId);
+    if (!target) { toast('找不到合約','error'); return; }
+    const invoices = parseInvoices(target['發票記錄']);
+    if (!invoices[idx]) { toast('找不到發票','error'); return; }
+    invoices[idx] = { number, amount:Number(amount)||0, date };
+    await costApi({
+      action:'updateContract', contractId,
+      invoiceRecords: JSON.stringify(invoices)
+    });
+    toast('發票已更新','success');
+    loadContracts();
+  } catch(e) { toast('更新失敗：'+e.message,'error'); }
+}
+
+async function delInvoice(contractId, idx) {
+  if (!confirm('確定刪除此筆發票？')) return;
+  try {
+    const cd = await costApi({action:'getContracts'});
+    const target = (cd.contracts||[]).find(c=>c['合約ID']===contractId);
+    if (!target) { toast('找不到合約','error'); return; }
+    const invoices = parseInvoices(target['發票記錄']);
+    invoices.splice(idx, 1);
+    await costApi({
+      action:'updateContract', contractId,
+      invoiceRecords: JSON.stringify(invoices)
+    });
+    toast('已刪除','success');
+    loadContracts();
+  } catch(e) { toast('刪除失敗','error'); }
+}
+
+async function completeContract(contractId) {
+  if (!confirm('確定完成此合約收款？\n完成後所有收款記錄將鎖定無法編輯。')) return;
+  try {
+    await costApi({action:'updateContract', contractId, status:'已完成'});
+    toast('合約已完成，收款記錄已鎖定','success');
+    loadContracts();
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+function editReceiptDialog(id, amount, date, method, note, status) {
+  const div = document.createElement('div');
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  const methods=['匯款','現金','支票','其他'];
+  const mBtns=methods.map(m=>`<button id="er-${m}" class="${(method||'匯款')===m?'active':''}" onclick="document.querySelectorAll('[id^=er-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:340px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯收款記錄</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款金額</div>
+    <input type="number" id="er-amount" value="${amount}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">日期</div>
+    <input type="date" id="er-date" value="${date}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款方式</div>
+    <div class="toggle-grp" style="margin-bottom:10px">${mBtns}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">備註</div>
+    <input type="text" id="er-note" value="${note}" placeholder="" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">收款狀態</div>
+    <div class="toggle-grp" style="margin-bottom:16px">
+      <button id="er-st-未收" class="${status==='未收'?'active':''}" onclick="document.querySelectorAll('[id^=er-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">未收</button>
+      <button id="er-st-已收" class="${status==='已收'?'active':''}" onclick="document.querySelectorAll('[id^=er-st-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">已收</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn full" onclick="this.closest('div[style*=rgba]').remove()">取消</button>
+      <button class="btn primary full" onclick="submitEditReceipt('${id}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+async function submitEditReceipt(id) {
+  const amount = document.getElementById('er-amount')?.value;
+  const date   = document.getElementById('er-date')?.value;
+  const note   = document.getElementById('er-note')?.value||'';
+  const activeMethod = document.querySelector('[id^=er-]:not([id^=er-st-]):not([id=er-amount]):not([id=er-date]):not([id=er-note]).active');
+  const payMethod = activeMethod?.textContent||'';
+  const activeSt  = document.querySelector('[id^=er-st-].active');
+  const status    = activeSt?.textContent||'未收';
+  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
+  try {
+    await costApi({action:'updateReceipt', receiptId:id, amount, receiptDate:date, payMethod, note, status});
+    toast('已更新','success'); loadContracts();
+  } catch(e) { toast('更新失敗','error'); }
+}
+
+async function delContract(id) {
+  if (!confirm('確定刪除此合約？（相關收款記錄不會一併刪除）')) return;
+  try { await costApi({action:'deleteContract',contractId:id}); toast('已刪除','success'); loadContracts(); }
+  catch(e) { toast('刪除失敗','error'); }
+}
+async function delReceipt(id) {
+  if (!confirm('確定刪除此收款記錄？')) return;
+  try { await costApi({action:'deleteReceipt',receiptId:id}); toast('已刪除','success'); loadContracts(); }
+  catch(e) { toast('刪除失敗','error'); }
+}
+// ═══════════════════════════════════════
+//  薪資發放
+// ═══════════════════════════════════════
+let payrollState = { rows:[], month:'', crew:'' };
+
+function crewName(code) {
+  const c = CFG.crews.find(x=>x['工班代號']===code);
+  return c ? (c['工班名稱']||code+'工班') : code+'工班';
+}
+
+function renderPayroll() {
+  // 月份預設本月
+  const mEl=document.getElementById('pay-month');
+  if (!mEl.value) mEl.value = (new Date()).toISOString().slice(0,7);
+  // 工班下拉
+  const sel=document.getElementById('pay-crew');
+  const crews=CFG.crews.length ? CFG.crews : [{工班代號:'A',工班名稱:'A工班'},{工班代號:'B',工班名稱:'B工班'}];
+  sel.innerHTML='<option value="">全部工班</option>'+crews.map(c=>`<option value="${c['工班代號']}">${c['工班名稱']||c['工班代號']+'工班'}</option>`).join('');
+}
+
+function crewUrlOf(code) {
+  return CFG.crewUrls[code] || (CFG.crews.find(c=>c['工班代號']===code)||{})['Apps Script URL'] || '';
+}
+
+// 產生某月份(yyyy-MM)的每日日期字串陣列
+function daysOfMonth(month) {
+  const [y,m]=month.split('-').map(Number);
+  const last=new Date(y, m, 0).getDate();     // 該月最後一天
+  const out=[];
+  for (let d=1; d<=last; d++) out.push(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  return out;
+}
+
+// 選配：向工班 report 取每人扣繳/勞報單（需管理員權限，抓不到就回 null 略過）
+async function fetchDeductionMap(url, month) {
+  const email = (currentUser && currentUser.email) || '';
+  try {
+    const res = await fetch(url+'?'+new URLSearchParams({action:'report', month, email}).toString());
+    const d = await res.json();
+    if (!Array.isArray(d.salary)) return null;
+    const map={};
+    d.salary.forEach(s=>{ map[s.name]={ hasReceipt:s.hasReceipt!==false, deduction:Number(s.deduction)||0 }; });
+    return map;
+  } catch(e) { return null; }
+}
+
+async function loadPayroll() {
+  if (!CFG.costUrl) { document.getElementById('payroll-area').innerHTML=noUrlMsg(); return; }
+  const area=document.getElementById('payroll-area');
+  const month=document.getElementById('pay-month').value;
+  const onlyCrew=document.getElementById('pay-crew').value;
+  if (!month) { toast('請先選發放月份','error'); return; }
+  area.innerHTML='<div class="loading-box"><span class="spinner"></span>從各工班出工計算中…</div>';
+  try {
+    const crews=(CFG.crews.length?CFG.crews:[{工班代號:'A'},{工班代號:'B'}])
+      .filter(c=>!onlyCrew||c['工班代號']===onlyCrew);
+    const dates=daysOfMonth(month);
+    const merged=[]; const problems=[]; let noReceiptInfo=false;
+
+    for (const c of crews) {
+      const code=c['工班代號'];
+      const cname=c['工班名稱']||code+'工班';
+      const url=crewUrlOf(code);
+      if (!url) { problems.push(`${cname}：未設定工班 URL`); continue; }
+
+      // 用 getLaborByDate 逐日抓出工（免管理員權限，與人力頁同一條路）
+      const dayResults=await Promise.all(dates.map(d=>
+        crewApi(code,{action:'getLaborByDate',date:d}).catch(()=>({records:[]}))
+      ));
+      // 依員工彙總（只算有打下班卡的）
+      const agg={};
+      dayResults.forEach(dr=>(dr.records||[]).forEach(r=>{
+        if (!r.clockedOut) return;
+        const k=r.name;
+        if (!agg[k]) agg[k]={ name:r.name, empId:r.empId||'', days:0, dailyWage:Number(r.dailyWage)||0, gross:0 };
+        agg[k].days+=1;
+        agg[k].gross+=Number(r.dailyWage)||0;
+      }));
+      const names=Object.keys(agg);
+      if (names.length===0) { problems.push(`${cname}：本月無完整出勤（需有打下班卡）`); continue; }
+
+      // 選配：抓扣繳資訊（勞報單 7%）。抓不到就先不扣、標註。
+      const dedMap=await fetchDeductionMap(url, month);
+      if (!dedMap) noReceiptInfo=true;
+
+      names.forEach(k=>{
+        const w=agg[k];
+        const dm=dedMap&&dedMap[k];
+        const deduction=dm?dm.deduction:0;
+        merged.push({
+          crew:code, empId:w.empId, name:w.name,
+          days:w.days, dailyWage:w.dailyWage, gross:w.gross,
+          hasReceipt: dm?dm.hasReceipt:true, deduction, buyTotal:0,
+          net: w.gross-deduction
+        });
+      });
+    }
+
+    if (merged.length===0) {
+      area.innerHTML=`<div class="card"><div class="card-body" style="color:var(--muted)">
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px">本月沒有抓到薪資</div>
+        ${problems.map(p=>`<div>• ${p}</div>`).join('')}
+        <div style="margin-top:10px;font-size:12px">目前登入：<strong>${(currentUser&&currentUser.email)||'未登入'}</strong>。若各工班本月確實有打卡，請確認發放月份與工班 URL。</div>
+      </div></div>`;
+      return;
+    }
+
+    // 寫回費用系統薪資發放表；若後端尚未更新則改用計算結果直接顯示
+    let usedFallback=false; let fallbackErr='';
+    try {
+      await costApi({action:'upsertPayrollBatch',period:month,rows:JSON.stringify(merged)});
+      const pd=await costApi({action:'getPayroll',period:month,crew:onlyCrew});
+      payrollState={ rows:pd.payroll||[], month, crew:onlyCrew };
+    } catch(e) {
+      usedFallback=true; fallbackErr=e.message||String(e);
+      payrollState={ rows: merged.map((w,i)=>({
+        '發放ID':'tmp'+i, '期間':month, '工班':w.crew, '員工ID':w.empId, '姓名':w.name,
+        '出勤天數':w.days, '日薪':w.dailyWage, '應發薪資':w.gross, '勞報單':w.hasReceipt?'是':'否',
+        '扣繳':w.deduction, '代買材料':0, '實發合計':w.net, '發放狀態':'未發放', '發放日期':'', '發放方式':''
+      })), month, crew:onlyCrew };
+    }
+    renderPayrollTable();
+    if (usedFallback) toast('已算出薪資，但寫不進費用系統（'+(fallbackErr||'原因不明')+'）。此畫面僅供試算，發放按鈕不會生效。','error');
+    if (noReceiptInfo) toast('部分工班勞報單扣繳資訊抓不到，實發暫未扣 7%（需管理員權限才會帶入）。','');
+    if (problems.length) toast('部分工班未帶入：'+problems.join('；'),'');
+  } catch(err) { area.innerHTML=errMsg(err); }
+}
+
+function renderPayrollTable() {
+  const area=document.getElementById('payroll-area');
+  const rows=payrollState.rows;
+  const totNet   = rows.reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+  const paidNet  = rows.filter(r=>r['發放狀態']==='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+  const unpaidNet= totNet-paidNet;
+  const body=rows.map(r=>{
+    const paid=r['發放狀態']==='已發放';
+    const id=r['發放ID'];
+    return `<tr>
+      <td>${r['姓名']}</td>
+      <td>${crewName(r['工班'])}</td>
+      <td>${r['出勤天數']}</td>
+      <td>${fmt(r['應發薪資'])}</td>
+      <td>${Number(r['扣繳'])>0?`<span style="color:var(--danger)">-${fmt(r['扣繳'])}</span>`:'—'}</td>
+      <td>${Number(r['代買材料'])>0?fmt(r['代買材料']):'—'}</td>
+      <td style="font-weight:700">${fmt(r['實發合計'])}</td>
+      <td>${paid
+        ? `<span class="badge paid">已發放</span><div style="font-size:10px;color:var(--muted)">${r['發放日期']||''} ${r['發放方式']||''}</div>`
+        : `<span class="badge unpaid">應付</span>`}</td>
+      <td>${paid
+        ? `<button class="btn sm" onclick="unmarkPayroll('${id}')">取消</button>`
+        : (String(id).indexOf('tmp')===0
+            ? `<button class="btn sm" disabled title="資料未寫入系統，無法發放">發放</button>`
+            : `<button class="btn sm primary" onclick="payDialog('${id}','${(r['姓名']||'').replace(/'/g,'')}')">發放</button>`)}</td>
+    </tr>`;
+  }).join('');
+  area.innerHTML=`<div class="card"><div class="card-body">
+    <div class="section-hd"><h3>${payrollState.month} 薪資彙總</h3>
+      <button class="btn sm" onclick="payAllDialog()">一鍵全部發放</button></div>
+    <div class="stat-row" style="margin-bottom:10px">
+      <div class="stat"><div class="stat-label">應付薪資（未發放）</div><div class="stat-value ${unpaidNet>0?'warn':''}">${fmt(unpaidNet)}</div></div>
+      <div class="stat"><div class="stat-label">已發放（計入成本）</div><div class="stat-value green">${fmt(paidNet)}</div></div>
+      <div class="stat"><div class="stat-label">實發合計</div><div class="stat-value">${fmt(totNet)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>姓名</th><th>工班</th><th>天數</th><th>應發</th><th>扣繳</th><th>代買</th><th>實發</th><th>狀態</th><th>操作</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">💡 代買材料同時也在「支出」以代墊款列帳，計損益時請擇一避免重複。</div>
+  </div></div>`;
+}
+
+function payDialog(payrollId, name) {
+  const html=`<div class="field"><label>發放日期</label><input type="date" id="pay-date" value="${today()}"></div>
+    <div class="field"><label>發放方式</label><select id="pay-method"><option>現金</option><option>匯款</option><option>支票</option></select></div>
+    <button class="btn primary full" onclick="doPayrollPaid('${payrollId}')">確認發放給 ${name}</button>`;
+  openModal('標記薪資發放', html);
+}
+
+async function doPayrollPaid(payrollId) {
+  const payDate=document.getElementById('pay-date').value;
+  const payMethod=document.getElementById('pay-method').value;
+  try {
+    await costApi({action:'markPayrollPaid',payrollId,payDate,payMethod});
+    closeModal();
+    const pd=await costApi({action:'getPayroll',period:payrollState.month,crew:payrollState.crew});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast('已標記發放','success');
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+async function unmarkPayroll(payrollId) {
+  if (!confirm('取消此筆發放？金額將回到應付。')) return;
+  try {
+    await costApi({action:'unmarkPayroll',payrollId});
+    const pd=await costApi({action:'getPayroll',period:payrollState.month,crew:payrollState.crew});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast('已取消發放','success');
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+function payAllDialog() {
+  const unpaid=payrollState.rows.filter(r=>r['發放狀態']!=='已發放');
+  if (unpaid.length===0) { toast('沒有待發放項目','error'); return; }
+  const html=`<div style="margin-bottom:10px">將一次發放 <strong>${unpaid.length}</strong> 位、合計 <strong>${fmt(unpaid.reduce((a,r)=>a+(Number(r['實發合計'])||0),0))}</strong></div>
+    <div class="field"><label>發放日期</label><input type="date" id="payall-date" value="${today()}"></div>
+    <div class="field"><label>發放方式</label><select id="payall-method"><option>現金</option><option>匯款</option><option>支票</option></select></div>
+    <button class="btn primary full" onclick="doPayAll()">確認全部發放</button>`;
+  openModal('一鍵發放', html);
+}
+
+async function doPayAll() {
+  const payDate=document.getElementById('payall-date').value;
+  const payMethod=document.getElementById('payall-method').value;
+  const unpaid=payrollState.rows.filter(r=>r['發放狀態']!=='已發放');
+  try {
+    for (const r of unpaid) {
+      await costApi({action:'markPayrollPaid',payrollId:r['發放ID'],payDate,payMethod});
+    }
+    closeModal();
+    const pd=await costApi({action:'getPayroll',period:payrollState.month,crew:payrollState.crew});
+    payrollState.rows=pd.payroll||[]; renderPayrollTable();
+    toast(`已發放 ${unpaid.length} 筆`,'success');
+  } catch(e) { toast('操作失敗：'+(e.message||e),'error'); }
+}
+
+// ═══════════════════════════════════════
+//  報表
+// ═══════════════════════════════════════
+function renderReport() {
+  buildQuickBtns('rpt-quick','rpt-start','rpt-end');
+  buildSiteSelect('rpt-site',true);
+  const {s,e}=thisMonth();
+  if (!document.getElementById('rpt-start').value) setDateRange('rpt-start','rpt-end',s,e);
+}
+
+function setRptType(t) {
+  rptType=t;
+  ['site','date','month'].forEach(k=>document.getElementById('rpt-'+k+'-btn')?.classList.toggle('active',k===t));
+}
+
+async function loadReport() {
+  if (!CFG.costUrl) { document.getElementById('report-area').innerHTML=noUrlMsg(); return; }
+  const area=document.getElementById('report-area');
+  area.innerHTML='<div class="loading-box"><span class="spinner"></span>計算中…</div>';
+  try {
+    const s=document.getElementById('rpt-start').value;
+    const e=document.getElementById('rpt-end').value;
+    const siteVal=document.getElementById('rpt-site').value;
+    const {siteId}=parseSiteVal(siteVal);
+    const d=await costApi({action:'getReport',startDate:s,endDate:e,siteId});
+    const expenses=d.expenses||[], labor=d.labor||[], receipts=d.receipts||[];
+
+    if (rptType==='site') {
+      const map={};
+      const ensR=n=>{ if(!map[n]) map[n]={labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0}; };
+      labor.forEach(r=>{ [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{ if(!site) return; ensR(site); map[site].labor+=Number(amt)||0; }); });
+      expenses.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); map[site].exp+=Number(r['金額'])||0; if(String(r['付款狀態']||'').trim()!=='已付') map[site].unpaid+=Number(r['金額'])||0; if(r['含稅']==='是') map[site].tax+=Number(r['金額'])||0; });
+      receipts.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); if(r['收款狀態']==='已收') map[site].received+=Number(r['收款金額'])||0; else map[site].pending+=Number(r['收款金額'])||0; });
+      const rows=Object.entries(map);
+      const tot=rows.reduce((a,[,v])=>({labor:a.labor+v.labor,exp:a.exp+v.exp,unpaid:a.unpaid+v.unpaid,tax:a.tax+v.tax,received:a.received+v.received,pending:a.pending+v.pending}),{labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0});
+      area.innerHTML=`<div class="card"><div class="card-body">
+        <div class="section-hd"><h3>依案場彙總</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>含稅</th><th>未付支出</th><th>已收款</th><th>待收款</th><th>支出合計</th></tr></thead>
+          <tbody>${rows.map(([name,v])=>`<tr>
+            <td>${name}</td>
+            <td>${fmt(v.labor)}</td>
+            <td>${fmt(v.exp)}</td>
+            <td>${fmt(v.tax)}</td>
+            <td>${v.unpaid>0?`<span class="badge unpaid">${fmt(v.unpaid)}</span>`:'—'}</td>
+            <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
+            <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
+            <td style="font-weight:700">${fmt(v.labor+v.exp)}</td>
+          </tr>`).join('')}</tbody>
+          <tfoot><tr class="tfoot-row">
+            <td>合計</td>
+            <td>${fmt(tot.labor)}</td><td>${fmt(tot.exp)}</td><td>${fmt(tot.tax)}</td>
+            <td>${fmt(tot.unpaid)}</td>
+            <td style="color:#15803d">${fmt(tot.received)}</td>
+            <td>${fmt(tot.pending)}</td>
+            <td>${fmt(tot.labor+tot.exp)}</td>
+          </tr></tfoot>
+        </table></div>
+      </div></div>`;
+
+    } else if (rptType==='date') {
+      const byD={};
+      expenses.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; byD[d].exp+=Number(r['金額'])||0; byD[d].cnt++; });
+      labor.forEach(r=>{ const d=r['日期']; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; byD[d].labor+=(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0); });
+      receipts.forEach(r=>{ const d=r['收款日期']||''; if(!d) return; if(!byD[d]) byD[d]={exp:0,cnt:0,labor:0,received:0}; if(r['收款狀態']==='已收') byD[d].received+=Number(r['收款金額'])||0; });
+      const rows=Object.entries(byD).sort((a,b)=>a[0]<b[0]?-1:1);
+      area.innerHTML=`<div class="card"><div class="card-body">
+        <div class="section-hd"><h3>依日期明細</h3></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>日期</th><th>人力</th><th>支出</th><th>筆數</th><th>已收款</th><th>支出小計</th></tr></thead>
+          <tbody>${rows.map(([d,v])=>`<tr><td>${d}</td><td>${fmt(v.labor)}</td><td>${fmt(v.exp)}</td><td>${v.cnt}</td><td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td><td style="font-weight:700">${fmt(v.labor+v.exp)}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div></div>`;
+
+    } else {
+      // 月結：加抓合約與收款，用「未完成合約金額 − 已收款」算應收帳款（與總覽同口徑）
+      const [cd, rdAll] = await Promise.all([
+        costApi({action:'getContracts', siteId}).catch(()=>({contracts:[]})),
+        costApi({action:'getReceipts',  siteId}).catch(()=>({receipts:[]}))
+      ]);
+      const allContracts = cd.contracts || [];
+      const allReceipts  = rdAll.receipts  || [];
+      // 每份合約累計已收款
+      const contractReceived={};
+      allReceipts.filter(r=>r['收款狀態']==='已收').forEach(r=>{
+        const cid=r['合約ID']; contractReceived[cid]=(contractReceived[cid]||0)+(Number(r['收款金額'])||0);
+      });
+      // 應收帳款 = 未完成合約的（合約金額 − 已收款）合計
+      const tAR=allContracts.filter(c=>c['狀態']!=='已完成').reduce((a,c)=>{
+        const amt=Number(c['合約金額'])||0, got=contractReceived[c['合約ID']]||0;
+        return a + Math.max(0, amt-got);
+      },0);
+
+      const tL=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
+      const tE=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
+      const tU=expenses.filter(r=>String(r['付款狀態']||'').trim()!=='已付').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+      const tT=expenses.filter(r=>r['含稅']==='是').reduce((a,r)=>a+(Number(r['金額'])||0),0);
+      // 期間內已收款（依收款日期落在報表區間內）
+      const tR=allReceipts.filter(r=>r['收款狀態']==='已收' && r['收款日期']>=s && r['收款日期']<=e)
+                          .reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
+      // 薪資：未發放=應付；已發放=計入成本（依期間 yyyy-MM 落在報表區間）
+      const pd=await costApi({action:'getPayroll',startMonth:s.slice(0,7),endMonth:e.slice(0,7)}).catch(()=>({payroll:[]}));
+      const pay=pd.payroll||[];
+      const tPayUnpaid=pay.filter(r=>r['發放狀態']!=='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+      const tPayPaid  =pay.filter(r=>r['發放狀態']==='已發放').reduce((a,r)=>a+(Number(r['實發合計'])||0),0);
+      area.innerHTML=`<div class="card"><div class="card-body">
+        <div class="section-hd"><h3>月結報表</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
+        <div class="stat-row">
+          <div class="stat"><div class="stat-label">人力費用</div><div class="stat-value green">${fmt(tL)}</div></div>
+          <div class="stat"><div class="stat-label">案場支出</div><div class="stat-value">${fmt(tE)}</div></div>
+          <div class="stat"><div class="stat-label">含稅發票</div><div class="stat-value">${fmt(tT)}</div></div>
+          <div class="stat"><div class="stat-label">未付支出</div><div class="stat-value ${tU>0?'danger':''}">${fmt(tU)}</div></div>
+          <div class="stat"><div class="stat-label">已發薪資</div><div class="stat-value green">${fmt(tPayPaid)}</div></div>
+          <div class="stat"><div class="stat-label">應付薪資</div><div class="stat-value ${tPayUnpaid>0?'danger':''}">${fmt(tPayUnpaid)}</div></div>
+          <div class="stat"><div class="stat-label">已收款</div><div class="stat-value green">${fmt(tR)}</div></div>
+          <div class="stat"><div class="stat-label">應收帳款</div><div class="stat-value ${tAR>0?'warn':''}">${fmt(tAR)}</div></div>
+        </div>
+        <div style="font-size:15px;font-weight:700;padding:12px 16px;background:var(--green-lt);border-radius:8px;color:var(--green-dk);margin-top:4px">
+          本期支出合計：${fmt(tL+tE)}　　損益試算：${fmt(tR-(tL+tE))}
+        </div>
+      </div></div>`;
+    }
+  } catch(err) { document.getElementById('report-area').innerHTML=errMsg(err); }
+}
+
+// ═══════════════════════════════════════
+//  設定
+// ═══════════════════════════════════════
+function renderSettings() {
+  document.getElementById('cost-url').value=CFG.costUrl||'';
+  renderCrewList();
+  renderSiteListSettings();
+}
+
+function renderCrewList() {
+  const crews=CFG.crews.length ? CFG.crews : [{工班代號:'A',工班名稱:'A工班','Apps Script URL':''},{工班代號:'B',工班名稱:'B工班','Apps Script URL':''}];
+  document.getElementById('crew-list').innerHTML=crews.map(c=>`
+    <div style="margin-bottom:12px">
+      <div class="field" style="margin-bottom:6px"><label>${c['工班名稱']||c['工班代號']+'工班'} URL</label>
+        <input type="text" id="crew-url-${c['工班代號']}" value="${CFG.crewUrls[c['工班代號']]||c['Apps Script URL']||''}" placeholder="https://script.google.com/macros/s/…/exec">
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" onclick="testCrewUrl('${c['工班代號']}')">測試連線</button>
+        <button class="btn sm primary" onclick="saveCrewUrl('${c['工班代號']}')">儲存</button>
+      </div>
+    </div>`).join('<hr class="divider">');
+}
+
+function renderSiteListSettings() {
+  const el=document.getElementById('site-list-settings');
+  if (!CFG.sites.length) { el.innerHTML='<div class="empty">尚無案場，請點「從工班同步」</div>'; return; }
+  el.innerHTML=CFG.sites.map(s=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="flex:1;font-size:13px;font-weight:600">${s.name}</div>
+      <span class="badge ${s.status==='進行中'?'active-s':'done-s'}">${s.status}</span>
+      <button class="btn sm" onclick="toggleSiteStatus('${s.siteId}','${s.status}')">${s.status==='進行中'?'完工':'啟用'}</button>
+    </div>`).join('');
+}
+
+async function saveCostUrl() {
+  CFG.costUrl=document.getElementById('cost-url').value.trim();
+  saveCfg();
+  toast('URL 已儲存，同步中…');
+  try {
+    const d=await costApi({action:'getSites'});
+    CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態']}));
+    const d2=await costApi({action:'getCrews'});
+    CFG.crews=d2.crews||[];
+    CFG.crews.forEach(c=>{ if(c['Apps Script URL']) CFG.crewUrls[c['工班代號']]=c['Apps Script URL']; });
+    saveCfg(); buildAllSiteSelects(); buildCrewToggleUI(); renderCrewList(); renderSiteListSettings();
+    toast('設定已儲存並同步','success');
+  } catch(e) { toast('URL 已儲存（同步失敗：'+e.message+'）','error'); }
+}
+
+async function testCostUrl() {
+  const url=document.getElementById('cost-url').value.trim();
+  if (!url) { toast('請先輸入 URL','error'); return; }
+  try { const r=await api(url,{action:''}); toast('連線成功：'+r.message,'success'); }
+  catch(e) { toast('連線失敗：'+e.message,'error'); }
+}
+
+async function saveCrewUrl(code) {
+  const url=document.getElementById('crew-url-'+code)?.value.trim()||'';
+  CFG.crewUrls[code]=url;
+  saveCfg();
+  if (CFG.costUrl) { try { await costApi({action:'saveCrewUrl',crew:code,url}); } catch(e){} }
+  toast(code+'工班 URL 已儲存','success');
+}
+
+async function testCrewUrl(code) {
+  const url=document.getElementById('crew-url-'+code)?.value.trim()||'';
+  if (!url) { toast('請先輸入 URL','error'); return; }
+  try { const r=await api(url,{action:'getEmployees'}); toast(`連線成功，共 ${r.employees?.length||0} 位員工`,'success'); }
+  catch(e) { toast('連線失敗：'+e.message,'error'); }
+}
+
+function addCrewDialog() {
+  const code=prompt('工班代號（如：C）');
+  if (!code) return;
+  const name=prompt('工班名稱')||code+'工班';
+  if (CFG.crews.find(c=>c['工班代號']===code)) { toast('此代號已存在','error'); return; }
+  CFG.crews.push({'工班代號':code,'工班名稱':name,'Apps Script URL':''});
+  saveCfg(); renderCrewList(); buildCrewToggleUI();
+  toast(name+' 已新增','success');
+}
+
+async function addSiteManual() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const name=document.getElementById('new-site-name').value.trim();
+  if (!name) return;
+  if (CFG.sites.find(s=>s.name===name)) { toast('此案場已存在','error'); return; }
+  try {
+    const r=await costApi({action:'addSite',name});
+    CFG.sites.push({siteId:r.siteId,name,status:'進行中'});
+    saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
+    document.getElementById('new-site-name').value='';
+    toast('案場已新增','success');
+  } catch(e) { toast('新增失敗','error'); }
+}
+
+async function syncSitesFromCrews() {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  toast('從工班同步中…');
+  const nameSet=new Set(CFG.sites.map(s=>s.name));
+  let added=0;
+  for (const crew of CFG.crews) {
+    const url=CFG.crewUrls[crew['工班代號']]||crew['Apps Script URL']||'';
+    if (!url) continue;
+    try {
+      const d=await api(url,{action:'getSites'});
+      for (const site of (d.sites||[])) {
+        if (!nameSet.has(site.name)) {
+          const r=await costApi({action:'addSite',name:site.name,status:site.status||'進行中'});
+          CFG.sites.push({siteId:r.siteId,name:site.name,status:site.status||'進行中'});
+          nameSet.add(site.name); added++;
+        }
+      }
+    } catch(e){}
+  }
+  dedupSites(); saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
+  toast(added>0?`已同步 ${added} 個新案場`:'所有案場已是最新','success');
+}
+
+async function toggleSiteStatus(siteId,current) {
+  if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
+  const ns=current==='進行中'?'已完工':'進行中';
+  try {
+    await costApi({action:'updateSite',siteId,status:ns});
+    const site=CFG.sites.find(s=>s.siteId===siteId);
+    if (site) site.status=ns;
+    saveCfg(); renderSiteListSettings();
+  } catch(e) { toast('更新失敗','error'); }
+}
+
+// ═══════════════════════════════════════
+//  工具
+// ═══════════════════════════════════════
+function fmt(v) { return '$'+(Number(v)||0).toLocaleString('zh-TW'); }
+
+function toast(msg,type='') {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast show'+(type?' '+type:'');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('show'),2800);
+}
+
+function noUrlMsg() { return `<div class="empty">⚙ 尚未設定費用系統 URL<br><span style="font-size:12px">請先到設定頁填入 Apps Script URL</span></div>`; }
+function errMsg(e) { return `<div class="empty" style="color:var(--danger)">❌ ${e.message}</div>`; }
+function openModal(title, innerHtml) {
+  closeModal();
+  const div=document.createElement('div');
+  div.id='app-modal';
+  div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:100%">
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px">${title}</div>
+    ${innerHtml}
+    <button class="btn full" style="margin-top:8px" onclick="closeModal()">取消</button>
+  </div>`;
+  document.body.appendChild(div);
+}
+function closeModal(){ const m=document.getElementById('app-modal'); if(m) m.remove(); }
+</script>
+</body>
+</html>
