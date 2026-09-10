@@ -39,6 +39,12 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 
 /* ── 內容區 ── */
 .content{padding:14px 14px 8px;max-width:680px;margin:0 auto}
+.content.wide{max-width:1080px}
+.dash-tbl{min-width:0;font-size:12px}
+.dash-tbl th,.dash-tbl td{padding:7px 8px;white-space:nowrap}
+.dash-tbl td:first-child,.dash-tbl th:first-child{white-space:normal;min-width:110px;max-width:220px}
+.dash-scope{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.dash-scope .hint{font-size:11px;color:var(--muted)}
 
 /* ── 頁面 ── */
 .page{display:none}.page.active{display:block}
@@ -659,6 +665,7 @@ function showPage(p) {
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
   document.getElementById('nav-'+p).classList.add('active');
+  document.querySelector('.content').classList.toggle('wide', ['dashboard','expense','report','payroll','income'].includes(p));
   const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payroll:renderPayroll,report:renderReport,settings:renderSettings};
   renders[p]();
 }
@@ -687,6 +694,7 @@ async function initApp() {
   buildQuickBtns('labor-quick','labor-start','labor-end');
   buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
   buildQuickBtns('rpt-quick','rpt-start','rpt-end');
+  document.querySelector('.content').classList.add('wide');
   renderDashboard();
 }
 
@@ -721,9 +729,11 @@ async function loadDashboard() {
       costApi({action:'getContracts'}).catch(()=>({contracts:[]})),
       costApi({action:'getReceipts'}).catch(()=>({receipts:[]}))
     ]);
-    const expenses=dP.expenses||[], labor=dP.labor||[];
-    const tblExpenses = dashScope==='all' ? (dAll.expenses||[]) : expenses;
-    const tblLabor    = dashScope==='all' ? (dAll.labor||[])    : labor;
+    // 卡片與表格都依 dashScope：累計＝全部資料；本期＝上方日期區間
+    const expenses = dashScope==='all' ? (dAll.expenses||[]) : (dP.expenses||[]);
+    const labor    = dashScope==='all' ? (dAll.labor||[])    : (dP.labor||[]);
+    const tblExpenses = expenses, tblLabor = labor;
+    const scopeTag = dashScope==='all' ? '累計' : '本期';
 
     const totalLabor=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
     const totalExp=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
@@ -742,7 +752,7 @@ async function loadDashboard() {
 
     // 期間內已收款（依收款日期）
     const totalReceived = allReceipts
-      .filter(r=>r['收款狀態']==='已收' && r['收款日期']>=s && r['收款日期']<=e)
+      .filter(r=>r['收款狀態']==='已收' && (dashScope==='all' || (r['收款日期']>=s && r['收款日期']<=e)))
       .reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
 
     // 待收款 = 所有「未完成」合約的（合約金額 − 已收款）總和
@@ -800,24 +810,24 @@ async function loadDashboard() {
       </tr>`).join('');
 
     c.innerHTML=`
+      <div class="dash-scope">
+        <div class="toggle-grp mini" style="width:auto">
+          <button class="${dashScope==='all'?'active':''}" onclick="setDashScope('all')">累計</button>
+          <button class="${dashScope==='period'?'active':''}" onclick="setDashScope('period')">本期</button>
+        </div>
+        <div class="hint">${dashScope==='all'?'累計：所有資料，不受上方日期影響':'本期：只算 '+s+' ～ '+e}；待收款一律為未完成合約的剩餘金額。</div>
+      </div>
       <div class="stat-row">
-        <div class="stat"><div class="stat-label">人力費用（本期）</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
-        <div class="stat"><div class="stat-label">案場支出合計（本期）</div><div class="stat-value">${fmt(totalExp)}</div></div>
-        <div class="stat"><div class="stat-label">已收款（本期）</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
+        <div class="stat"><div class="stat-label">人力費用（${scopeTag}）</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
+        <div class="stat"><div class="stat-label">案場支出合計（${scopeTag}）</div><div class="stat-value">${fmt(totalExp)}</div></div>
+        <div class="stat"><div class="stat-label">已收款（${scopeTag}）</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
         <div class="stat"><div class="stat-label">待收款（累計）</div><div class="stat-value ${totalPending>0?'warn':''}">${fmt(totalPending)}</div></div>
-        <div class="stat"><div class="stat-label">未付支出（本期）</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
-        <div class="stat"><div class="stat-label">含稅金額（本期）</div><div class="stat-value">${fmt(totalTax)}</div></div>
+        <div class="stat"><div class="stat-label">未付支出（${scopeTag}）</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
+        <div class="stat"><div class="stat-label">含稅金額（${scopeTag}）</div><div class="stat-value">${fmt(totalTax)}</div></div>
       </div>
       <div class="card"><div class="card-body">
-        <div class="section-hd">
-          <h3>各案場費用</h3>
-          <div class="toggle-grp mini" style="width:auto">
-            <button class="${dashScope==='all'?'active':''}" onclick="setDashScope('all')">累計</button>
-            <button class="${dashScope==='period'?'active':''}" onclick="setDashScope('period')">本期</button>
-          </div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${dashScope==='all'?'累計：每個案場從開案到目前的所有人力、支出、收款（不受上方日期影響）':'本期：只算 '+s+' ～ '+e+' 的人力、支出、收款'}；待收款一律為未完成合約的剩餘金額。</div>
-        <div class="tbl-wrap"><table style="min-width:620px">
+        <div class="section-hd"><h3>各案場費用</h3></div>
+        <div class="tbl-wrap"><table class="dash-tbl">
           <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>支出合計</th><th>未付</th><th>已收款</th><th>待收款</th><th>收支差</th></tr></thead>
           <tbody>${siteRows||'<tr><td colspan="8" class="empty">無資料</td></tr>'}</tbody>
           ${siteRows?`<tfoot><tr class="tfoot-row"><td>合計</td><td>${fmt(tot.labor)}</td><td>${fmt(tot.expense)}</td><td>${fmt(tot.labor+tot.expense)}</td><td>${fmt(tot.unpaid)}</td><td style="color:#15803d">${fmt(tot.received)}</td><td>${fmt(tot.pending)}</td><td>${fmt(tot.received-(tot.labor+tot.expense))}</td></tr></tfoot>`:''}
