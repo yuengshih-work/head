@@ -38,7 +38,7 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 .nav-btn.active .ni{transform:scale(1.1)}
 
 /* ── 內容區 ── */
-.content{padding:14px 14px 8px;max-width:680px;margin:0 auto}
+.content{padding:14px 14px 8px;max-width:1400px;margin:0 auto}
 
 /* ── 頁面 ── */
 .page{display:none}.page.active{display:block}
@@ -48,8 +48,8 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 .card-body{padding:14px 16px}
 .section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
 .section-hd h3{font-size:14px;font-weight:600}
-
 .stat-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media(min-width:900px){.stat-row{grid-template-columns:repeat(3,1fr)}}
 .stat{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
 .stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
 .stat-value{font-size:20px;font-weight:700}
@@ -101,7 +101,7 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:460px}
 th{text-align:left;padding:8px 10px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;white-space:nowrap}
-td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tbody tr:active td{background:#fafafa}
 .grp-row td{background:#f3faf7;font-weight:700}
