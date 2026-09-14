@@ -1545,6 +1545,7 @@ async function loadContracts() {
           </div>
           <div style="text-align:right">
             <div class="contract-amount">${fmt(amount)}<span class="tax-tag">合約金額</span></div>
+            <button class="btn sm" style="font-size:11px;padding:3px 8px;margin-top:2px" onclick="moveContractDialog('${c['合約ID']}','${(c['案場ID']||'')}','${c['案場名稱'].replace(/'/g,'')}')" title="把這份合約和它的收款搬到別的案場或戶別">⇄ 改案場</button>
             ${totalReceived>0?`<div style="font-size:11px;color:#15803d">已收 ${fmt(totalReceived)}</div>`:''}
             ${remaining>0?`<div style="font-size:11px;color:var(--warn)">待收 ${fmt(remaining)}</div>`:''}
           </div>
@@ -1597,6 +1598,54 @@ async function loadContracts() {
       </div>`;
     }).join('');
   } catch(err) { wrap.innerHTML=errMsg(err); }
+}
+
+// 合約「改案場」：可直接選現有案場／戶別，或當場在同一棟樓底下新增一戶再搬過去
+function moveContractDialog(contractId, curSiteId, curSiteName) {
+  const cur = CFG.sites.find(s=>s.siteId===curSiteId) || siteByName(curSiteName);
+  const building = cur ? (siteParentOf(cur) || cur) : null;   // 這份合約所在的大樓（母案場）
+  openModal('改案場 — '+curSiteName, `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">搬到</div>
+    <div><select id="mc-site" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px"></select>
+    </div>
+    ${building?`
+    <div style="margin:10px 0 6px;font-size:11px;color:var(--muted);font-weight:600">或在「${building.name}」底下新增一戶：</div>
+    <div style="display:flex;gap:6px">
+      <input type="text" id="mc-new-unit" placeholder="例：5F-2" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+      <button class="btn" onclick="moveContractToNewUnit('${contractId}','${building.siteId}')">新增並搬過去</button>
+    </div>`:''}
+    <div style="font-size:11px;color:var(--muted);margin-top:10px">合約底下的所有收款紀錄會一起搬。支出不受影響（要搬支出請到支出明細用「編輯」改案場）。</div>
+    <button class="btn full primary" style="margin-top:12px" onclick="submitMoveContract('${contractId}')">確定搬移</button>`);
+  buildSiteSelect('mc-site', false);
+  const sel=document.getElementById('mc-site');
+  if (cur) sel.value=cur.siteId+'|'+cur.name;
+}
+async function submitMoveContract(contractId, siteIdOverride) {
+  const {siteId} = siteIdOverride ? {siteId:siteIdOverride} : parseSiteVal(document.getElementById('mc-site').value);
+  if (!siteId) { toast('請選擇案場','error'); return; }
+  try {
+    const r=await costApi({action:'moveContractSite', contractId, siteId});
+    if (r.success===false) throw new Error(r.error||'搬移失敗');
+    closeModal();
+    toast(`已搬到「${r.siteName}」（連同 ${r.receiptsMoved} 筆收款）`,'success');
+    loadContracts();
+  } catch(e) { toast('搬移失敗：'+(e.message||e),'error'); }
+}
+async function moveContractToNewUnit(contractId, parentId) {
+  const parent=CFG.sites.find(s=>s.siteId===parentId);
+  let unit=(document.getElementById('mc-new-unit').value||'').trim();
+  if (!unit || !parent) { toast('請輸入戶別','error'); return; }
+  const name = unit.startsWith(parent.name) ? unit : parent.name+' '+unit;
+  let site=CFG.sites.find(s=>s.name===name);
+  try {
+    if (!site) {
+      const r=await costApi({action:'addSite', name, parentId});
+      if (r.success===false) throw new Error(r.error||'新增戶別失敗');
+      site={siteId:r.siteId,name,status:'進行中',parentId};
+      CFG.sites.push(site); saveCfg(); buildAllSiteSelects();
+    }
+    await submitMoveContract(contractId, site.siteId);
+  } catch(e) { toast('失敗：'+(e.message||e),'error'); }
 }
 
 function addReceiptDialog(contractId, siteId, siteName) {
@@ -2398,3 +2447,4 @@ function closeModal(){ const m=document.getElementById('app-modal'); if(m) m.rem
 </script>
 </body>
 </html>
+
