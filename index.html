@@ -39,12 +39,6 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 
 /* ── 內容區 ── */
 .content{padding:14px 14px 8px;max-width:680px;margin:0 auto}
-.content.wide{max-width:1080px}
-.dash-tbl{min-width:0;font-size:12px}
-.dash-tbl th,.dash-tbl td{padding:7px 8px;white-space:nowrap}
-.dash-tbl td:first-child,.dash-tbl th:first-child{white-space:normal;min-width:110px;max-width:220px}
-.dash-scope{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.dash-scope .hint{font-size:11px;color:var(--muted)}
 
 /* ── 頁面 ── */
 .page{display:none}.page.active{display:block}
@@ -110,6 +104,10 @@ th{text-align:left;padding:8px 10px;font-weight:600;color:var(--muted);border-bo
 td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tbody tr:active td{background:#fafafa}
+.grp-row td{background:#f3faf7;font-weight:700}
+.grp-tag{font-size:10px;font-weight:500;color:var(--muted);margin-left:4px}
+.grp-child td:first-child{color:#555}
+.grp-sub{padding-left:10px;font-size:12px}
 .tfoot-row td{font-weight:700;background:#f7f8f9;border-top:1px solid var(--border);border-bottom:none}
 
 /* ── 人力列 ── */
@@ -466,9 +464,13 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
         <div class="info-box">案場統一在這裡新增／完工，儲存後會自動推送到各工班打卡系統；打卡系統後台不再能新增案場。</div>
         <div id="site-list-settings"></div>
         <hr class="divider">
-        <div style="display:flex;gap:8px">
-          <input type="text" id="new-site-name" placeholder="新增案場名稱" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
-          <button class="btn primary" onclick="addSiteManual()">＋</button>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <select id="new-site-parent" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px" onchange="onNewSiteParentChange()"></select>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="new-site-name" placeholder="新增案場名稱" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+            <button class="btn primary" onclick="addSiteManual()">＋</button>
+          </div>
+          <div id="new-site-hint" style="font-size:11px;color:var(--muted)">同一棟樓多戶：先新增母案場（例：河東路），再選它為上層新增各戶（例：5F-2）。工班打卡只看到母案場；記帳、合約、收款可以記到戶別；人力一律掛母案場。</div>
         </div>
         <div id="site-push-result" style="font-size:12px;margin-top:8px"></div>
       </div></div>
@@ -645,12 +647,45 @@ async function crewApi(crew, params) {
 // ═══════════════════════════════════════
 //  案場選單工具
 // ═══════════════════════════════════════
-function buildSiteSelect(el, addAll) {
+// 案場分兩層：母案場（parentId 空）→ 戶別（parentId = 母案場 ID）。
+// 打卡系統只認母案場；記帳／合約／收款可以記到戶別。
+function siteChildren(parentId) { return CFG.sites.filter(s=>s.parentId&&s.parentId===parentId); }
+function siteParentOf(site) { return site&&site.parentId ? CFG.sites.find(s=>s.siteId===site.parentId) : null; }
+function siteByName(name) { return CFG.sites.find(s=>s.name===String(name||'').trim()); }
+// 戶別在下拉／表格裡顯示時去掉母案場前綴（「河東路 5F-2」→「5F-2」）
+function unitLabel(site) {
+  const parent = siteParentOf(site);
+  if (!parent) return site.name;
+  const n = site.name;
+  if (n.startsWith(parent.name)) { const t=n.slice(parent.name.length).replace(/^[\s\-－_\/／]+/,''); if (t) return t; }
+  return n;
+}
+// 依母案場排序：母案場（或獨立案場）一列，底下接它的戶別
+function sitesOrdered(list) {
+  list = list || CFG.sites;
+  const out=[];
+  list.filter(s=>!s.parentId).forEach(p=>{
+    out.push(p);
+    list.filter(c=>c.parentId===p.siteId).forEach(c=>out.push(c));
+  });
+  // 上層找不到的戶別（母案場被刪或資料異常）排最後
+  list.filter(c=>c.parentId && !list.find(p=>p.siteId===c.parentId)).forEach(c=>out.push(c));
+  return out;
+}
+function buildSiteSelect(el, addAll, opts) {
   if (typeof el === 'string') el = document.getElementById(el);
   if (!el) return;
+  opts = opts || {};
   const cur = el.value;
+  let list = CFG.sites;
+  if (opts.parentsOnly) list = list.filter(s=>!s.parentId);
+  const hasKids = s => siteChildren(s.siteId).length>0;
   el.innerHTML = (addAll ? '<option value="">所有案場</option>' : '<option value="">— 選擇案場 —</option>') +
-    CFG.sites.map(s=>`<option value="${s.siteId||''}|${s.name}"${s.name===cur||((s.siteId||'')+'|'+s.name)===cur?' selected':''}>${s.name}</option>`).join('');
+    sitesOrdered(list).map(s=>{
+      const sel = s.name===cur||((s.siteId||'')+'|'+s.name)===cur ? ' selected':'';
+      const label = s.parentId ? '　└ '+unitLabel(s) : (hasKids(s) ? s.name+(addAll?'（整棟）':'（整棟／共用）') : s.name);
+      return `<option value="${s.siteId||''}|${s.name}"${sel}>${label}</option>`;
+    }).join('');
 }
 function parseSiteVal(val) {
   if (!val||val==='|') return {siteId:'',name:''};
@@ -665,7 +700,6 @@ function showPage(p) {
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
   document.getElementById('nav-'+p).classList.add('active');
-  document.querySelector('.content').classList.toggle('wide', ['dashboard','expense','report','payroll','income'].includes(p));
   const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payroll:renderPayroll,report:renderReport,settings:renderSettings};
   renders[p]();
 }
@@ -681,7 +715,7 @@ async function initApp() {
   if (CFG.costUrl) {
     try {
       const d=await costApi({action:'getSites'});
-      CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態']}));
+      CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態'],parentId:String(r['上層案場ID']||'').trim()}));
       dedupSites();
       const d2=await costApi({action:'getCrews'});
       CFG.crews=d2.crews||[];
@@ -694,7 +728,6 @@ async function initApp() {
   buildQuickBtns('labor-quick','labor-start','labor-end');
   buildQuickBtns('exp-quick','exp-start','exp-end',loadExpenses);
   buildQuickBtns('rpt-quick','rpt-start','rpt-end');
-  document.querySelector('.content').classList.add('wide');
   renderDashboard();
 }
 
@@ -729,11 +762,9 @@ async function loadDashboard() {
       costApi({action:'getContracts'}).catch(()=>({contracts:[]})),
       costApi({action:'getReceipts'}).catch(()=>({receipts:[]}))
     ]);
-    // 卡片與表格都依 dashScope：累計＝全部資料；本期＝上方日期區間
-    const expenses = dashScope==='all' ? (dAll.expenses||[]) : (dP.expenses||[]);
-    const labor    = dashScope==='all' ? (dAll.labor||[])    : (dP.labor||[]);
-    const tblExpenses = expenses, tblLabor = labor;
-    const scopeTag = dashScope==='all' ? '累計' : '本期';
+    const expenses=dP.expenses||[], labor=dP.labor||[];
+    const tblExpenses = dashScope==='all' ? (dAll.expenses||[]) : expenses;
+    const tblLabor    = dashScope==='all' ? (dAll.labor||[])    : labor;
 
     const totalLabor=labor.reduce((a,r)=>a+(Number(r['上午金額'])||0)+(Number(r['下午金額'])||0),0);
     const totalExp=expenses.reduce((a,r)=>a+(Number(r['金額'])||0),0);
@@ -752,7 +783,7 @@ async function loadDashboard() {
 
     // 期間內已收款（依收款日期）
     const totalReceived = allReceipts
-      .filter(r=>r['收款狀態']==='已收' && (dashScope==='all' || (r['收款日期']>=s && r['收款日期']<=e)))
+      .filter(r=>r['收款狀態']==='已收' && r['收款日期']>=s && r['收款日期']<=e)
       .reduce((a,r)=>a+(Number(r['收款金額'])||0),0);
 
     // 待收款 = 所有「未完成」合約的（合約金額 − 已收款）總和
@@ -795,11 +826,12 @@ async function loadDashboard() {
     const knownNames = new Set(CFG.sites.map(x=>String(x.name).trim()));
     const unknown = Object.keys(siteMap).filter(n=>n && n!=='未分類' && !knownNames.has(String(n).trim()));
 
-    const sortedSites = Object.entries(siteMap).sort((a,b)=>(b[1].labor+b[1].expense)-(a[1].labor+a[1].expense));
-    const tot = sortedSites.reduce((a,[,v])=>({labor:a.labor+v.labor,expense:a.expense+v.expense,unpaid:a.unpaid+v.unpaid,received:a.received+v.received,pending:a.pending+v.pending}),{labor:0,expense:0,unpaid:0,received:0,pending:0});
-    const siteRows=sortedSites.map(([name,v])=>`
-      <tr>
-        <td>${name}${unknown.includes(name)?' <span title="案場管理裡沒有這個名稱" style="color:var(--warn)">⚠</span>':''}</td>
+    const emptyV=()=>({labor:0,expense:0,unpaid:0,received:0,pending:0});
+    const addV=(a,v)=>{ Object.keys(a).forEach(k=>a[k]+=v[k]||0); return a; };
+    const tot = Object.values(siteMap).reduce((a,v)=>addV(a,v),emptyV());
+    const rowHtml=(label,v,cls,nameWarn)=>`
+      <tr class="${cls||''}">
+        <td>${label}${nameWarn?' <span title="案場管理裡沒有這個名稱" style="color:var(--warn)">⚠</span>':''}</td>
         <td>${fmt(v.labor)}</td>
         <td>${fmt(v.expense)}</td>
         <td>${fmt(v.labor+v.expense)}</td>
@@ -807,27 +839,28 @@ async function loadDashboard() {
         <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
         <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
         <td style="font-weight:700;color:${(v.received-(v.labor+v.expense))>=0?'#15803d':'var(--danger)'}">${fmt(v.received-(v.labor+v.expense))}</td>
-      </tr>`).join('');
+      </tr>`;
+    const siteRows=groupSiteRows(siteMap, emptyV, addV, rowHtml, unknown);
 
     c.innerHTML=`
-      <div class="dash-scope">
-        <div class="toggle-grp mini" style="width:auto">
-          <button class="${dashScope==='all'?'active':''}" onclick="setDashScope('all')">累計</button>
-          <button class="${dashScope==='period'?'active':''}" onclick="setDashScope('period')">本期</button>
-        </div>
-        <div class="hint">${dashScope==='all'?'累計：所有資料，不受上方日期影響':'本期：只算 '+s+' ～ '+e}；待收款一律為未完成合約的剩餘金額。</div>
-      </div>
       <div class="stat-row">
-        <div class="stat"><div class="stat-label">人力費用（${scopeTag}）</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
-        <div class="stat"><div class="stat-label">案場支出合計（${scopeTag}）</div><div class="stat-value">${fmt(totalExp)}</div></div>
-        <div class="stat"><div class="stat-label">已收款（${scopeTag}）</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
+        <div class="stat"><div class="stat-label">人力費用（本期）</div><div class="stat-value green">${fmt(totalLabor)}</div></div>
+        <div class="stat"><div class="stat-label">案場支出合計（本期）</div><div class="stat-value">${fmt(totalExp)}</div></div>
+        <div class="stat"><div class="stat-label">已收款（本期）</div><div class="stat-value green">${fmt(totalReceived)}</div></div>
         <div class="stat"><div class="stat-label">待收款（累計）</div><div class="stat-value ${totalPending>0?'warn':''}">${fmt(totalPending)}</div></div>
-        <div class="stat"><div class="stat-label">未付支出（${scopeTag}）</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
-        <div class="stat"><div class="stat-label">含稅金額（${scopeTag}）</div><div class="stat-value">${fmt(totalTax)}</div></div>
+        <div class="stat"><div class="stat-label">未付支出（本期）</div><div class="stat-value ${totalUnpaid>0?'danger':''}">${fmt(totalUnpaid)}</div></div>
+        <div class="stat"><div class="stat-label">含稅金額（本期）</div><div class="stat-value">${fmt(totalTax)}</div></div>
       </div>
       <div class="card"><div class="card-body">
-        <div class="section-hd"><h3>各案場費用</h3></div>
-        <div class="tbl-wrap"><table class="dash-tbl">
+        <div class="section-hd">
+          <h3>各案場費用</h3>
+          <div class="toggle-grp mini" style="width:auto">
+            <button class="${dashScope==='all'?'active':''}" onclick="setDashScope('all')">累計</button>
+            <button class="${dashScope==='period'?'active':''}" onclick="setDashScope('period')">本期</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${dashScope==='all'?'累計：每個案場從開案到目前的所有人力、支出、收款（不受上方日期影響）':'本期：只算 '+s+' ～ '+e+' 的人力、支出、收款'}；待收款一律為未完成合約的剩餘金額。</div>
+        <div class="tbl-wrap"><table style="min-width:620px">
           <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>支出合計</th><th>未付</th><th>已收款</th><th>待收款</th><th>收支差</th></tr></thead>
           <tbody>${siteRows||'<tr><td colspan="8" class="empty">無資料</td></tr>'}</tbody>
           ${siteRows?`<tfoot><tr class="tfoot-row"><td>合計</td><td>${fmt(tot.labor)}</td><td>${fmt(tot.expense)}</td><td>${fmt(tot.labor+tot.expense)}</td><td>${fmt(tot.unpaid)}</td><td style="color:#15803d">${fmt(tot.received)}</td><td>${fmt(tot.pending)}</td><td>${fmt(tot.received-(tot.labor+tot.expense))}</td></tr></tfoot>`:''}
@@ -905,7 +938,8 @@ async function loadLaborFromCrew() {
 }
 
 function renderLaborList() {
-  const activeSites=CFG.sites.filter(s=>s.status==='進行中');
+  // 人力只掛母案場（不分攤到戶別），所以只列母案場／獨立案場
+  const activeSites=CFG.sites.filter(s=>s.status==='進行中' && !s.parentId);
   const opts=(def)=>activeSites.map(s=>`<option value="${s.name}"${s.name===def?' selected':''}>${s.name}</option>`).join('');
   const el=document.getElementById('labor-list');
   if (!laborState.records.length) { el.innerHTML='<div class="empty">無出工紀錄</div>'; updateLaborTotal(); return; }
@@ -1307,8 +1341,8 @@ async function getEmployeeList() {
   return results;
 }
 function editExpenseDialog(r) {
-  const sites = CFG.sites.filter(s=>s.status==='進行中' || s.name===r['案場名稱']);
-  const siteOpts = sites.map(s=>`<option value="${s.siteId}|${s.name}" ${s.name===r['案場名稱']?'selected':''}>${s.name}</option>`).join('');
+  const sites = sitesOrdered(CFG.sites.filter(s=>s.status==='進行中' || s.name===r['案場名稱']));
+  const siteOpts = sites.map(s=>`<option value="${s.siteId}|${s.name}" ${s.name===r['案場名稱']?'selected':''}>${s.parentId?'　└ '+unitLabel(s):s.name}</option>`).join('');
   const methods=['現金','匯款','支票'];
   const pmBtns=methods.map(m=>`<button id="ee-pm-${m}" class="${r['出帳方式']===m?'active':''}" onclick="document.querySelectorAll('[id^=ee-pm-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -2039,14 +2073,11 @@ async function loadReport() {
       labor.forEach(r=>{ [[r['上午案場'],r['上午金額']],[r['下午案場'],r['下午金額']]].forEach(([site,amt])=>{ if(!site) return; ensR(site); map[site].labor+=Number(amt)||0; }); });
       expenses.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); map[site].exp+=Number(r['金額'])||0; if(String(r['付款狀態']||'').trim()!=='已付') map[site].unpaid+=Number(r['金額'])||0; if(r['含稅']==='是') map[site].tax+=Number(r['金額'])||0; });
       receipts.forEach(r=>{ const site=r['案場名稱']||'未分類'; ensR(site); if(r['收款狀態']==='已收') map[site].received+=Number(r['收款金額'])||0; else map[site].pending+=Number(r['收款金額'])||0; });
-      const rows=Object.entries(map);
-      const tot=rows.reduce((a,[,v])=>({labor:a.labor+v.labor,exp:a.exp+v.exp,unpaid:a.unpaid+v.unpaid,tax:a.tax+v.tax,received:a.received+v.received,pending:a.pending+v.pending}),{labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0});
-      area.innerHTML=`<div class="card"><div class="card-body">
-        <div class="section-hd"><h3>依案場彙總</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>含稅</th><th>未付支出</th><th>已收款</th><th>待收款</th><th>支出合計</th></tr></thead>
-          <tbody>${rows.map(([name,v])=>`<tr>
-            <td>${name}</td>
+      const emptyV=()=>({labor:0,exp:0,unpaid:0,tax:0,received:0,pending:0});
+      const addV=(a,v)=>{ Object.keys(a).forEach(k=>a[k]+=v[k]||0); return a; };
+      const tot=Object.values(map).reduce((a,v)=>addV(a,v),emptyV());
+      const rowHtml=(label,v,cls)=>`<tr class="${cls||''}">
+            <td>${label}</td>
             <td>${fmt(v.labor)}</td>
             <td>${fmt(v.exp)}</td>
             <td>${fmt(v.tax)}</td>
@@ -2054,7 +2085,12 @@ async function loadReport() {
             <td style="color:#15803d;font-weight:600">${v.received>0?fmt(v.received):'—'}</td>
             <td>${v.pending>0?`<span class="badge unpaid">${fmt(v.pending)}</span>`:'—'}</td>
             <td style="font-weight:700">${fmt(v.labor+v.exp)}</td>
-          </tr>`).join('')}</tbody>
+          </tr>`;
+      area.innerHTML=`<div class="card"><div class="card-body">
+        <div class="section-hd"><h3>依案場彙總</h3><span style="font-size:11px;color:var(--muted)">${s} ~ ${e}</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>案場</th><th>人力</th><th>支出</th><th>含稅</th><th>未付支出</th><th>已收款</th><th>待收款</th><th>支出合計</th></tr></thead>
+          <tbody>${groupSiteRows(map, emptyV, addV, rowHtml, [])}</tbody>
           <tfoot><tr class="tfoot-row">
             <td>合計</td>
             <td>${fmt(tot.labor)}</td><td>${fmt(tot.exp)}</td><td>${fmt(tot.tax)}</td>
@@ -2152,12 +2188,18 @@ function renderCrewList() {
 function renderSiteListSettings() {
   const el=document.getElementById('site-list-settings');
   if (!CFG.sites.length) { el.innerHTML='<div class="empty">尚無案場，請在下方新增（或用「從工班匯入」把打卡系統既有案場抓進來）</div>'; return; }
-  el.innerHTML=CFG.sites.map(s=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0">
-      <div style="flex:1;font-size:13px;font-weight:600">${s.name}</div>
+  el.innerHTML=sitesOrdered().map(s=>{
+    const kids = s.parentId ? 0 : siteChildren(s.siteId).length;
+    return `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0${s.parentId?';padding-left:18px':''}">
+      <div style="flex:1;font-size:13px;font-weight:${s.parentId?'500':'600'}">${s.parentId?'<span style="color:var(--muted)">└ </span>'+unitLabel(s):s.name}${kids?` <span class="grp-tag">${kids} 戶</span>`:''}${s.parentId?' <span class="grp-tag">戶別（不推送打卡）</span>':''}</div>
+      ${s.parentId?'':`<button class="btn sm" onclick="prepAddUnit('${s.siteId}')" title="在這棟樓底下新增一戶">＋戶別</button>`}
       <span class="badge ${s.status==='進行中'?'active-s':'done-s'}">${s.status}</span>
       <button class="btn sm" onclick="toggleSiteStatus('${s.siteId}','${s.status}')">${s.status==='進行中'?'完工':'啟用'}</button>
-    </div>`).join('');
+    </div>`;}).join('');
+  buildSiteSelect('new-site-parent', true, {parentsOnly:true});
+  const ps=document.getElementById('new-site-parent');
+  if (ps && ps.options[0]) ps.options[0].textContent='（無上層＝母案場／獨立案場）';
 }
 
 function showPushResult(push) {
@@ -2188,7 +2230,7 @@ async function saveCostUrl() {
   toast('URL 已儲存，同步中…');
   try {
     const d=await costApi({action:'getSites'});
-    CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態']}));
+    CFG.sites=(d.sites||[]).map(r=>({siteId:r['案場ID'],name:r['案場名稱'],status:r['狀態'],parentId:String(r['上層案場ID']||'').trim()}));
     const d2=await costApi({action:'getCrews'});
     CFG.crews=d2.crews||[];
     CFG.crews.forEach(c=>{ if(c['Apps Script URL']) CFG.crewUrls[c['工班代號']]=c['Apps Script URL']; });
@@ -2229,18 +2271,33 @@ function addCrewDialog() {
   toast(name+' 已新增，請填入 URL 並儲存','success');
 }
 
+function prepAddUnit(parentId) {
+  const ps=document.getElementById('new-site-parent');
+  const p=CFG.sites.find(s=>s.siteId===parentId);
+  if (ps && p) { ps.value=p.siteId+'|'+p.name; onNewSiteParentChange(); }
+  const inp=document.getElementById('new-site-name'); if (inp) { inp.focus(); inp.scrollIntoView({block:'center'}); }
+}
+function onNewSiteParentChange() {
+  const {name}=parseSiteVal(document.getElementById('new-site-parent').value);
+  const inp=document.getElementById('new-site-name');
+  inp.placeholder = name ? `戶別（例：5F-2，會存成「${name} 5F-2」）` : '新增案場名稱';
+}
 async function addSiteManual() {
   if (!CFG.costUrl) { toast('請先設定費用系統 URL','error'); return; }
-  const name=document.getElementById('new-site-name').value.trim();
+  let name=document.getElementById('new-site-name').value.trim();
   if (!name) return;
+  const {siteId:parentId,name:parentName}=parseSiteVal(document.getElementById('new-site-parent')?.value||'');
+  // 戶別名稱一律加母案場前綴存檔，全系統名稱才不會撞（支出／人力表都只記名稱）
+  if (parentName && !name.startsWith(parentName)) name = parentName+' '+name;
   if (CFG.sites.find(s=>s.name===name)) { toast('此案場已存在','error'); return; }
   try {
-    const r=await costApi({action:'addSite',name});
-    CFG.sites.push({siteId:r.siteId,name,status:'進行中'});
+    const r=await costApi({action:'addSite',name,parentId});
+    if (r.success===false) throw new Error(r.error||'新增失敗');
+    CFG.sites.push({siteId:r.siteId,name,status:'進行中',parentId:parentId||''});
     saveCfg(); buildAllSiteSelects(); renderSiteListSettings();
     document.getElementById('new-site-name').value='';
     showPushResult(r.push);
-    toast('案場已新增並推送到工班','success');
+    toast(parentId?`戶別「${name}」已新增（不推送到打卡系統）`:'案場已新增並推送到工班','success');
   } catch(e) { toast('新增失敗：'+(e.message||e),'error'); }
 }
 
@@ -2258,7 +2315,7 @@ async function syncSitesFromCrews() {
       for (const site of (d.sites||[])) {
         if (!nameSet.has(site.name)) {
           const r=await costApi({action:'addSite',name:site.name,status:site.status||'進行中',push:'false'});
-          CFG.sites.push({siteId:r.siteId,name:site.name,status:site.status||'進行中'});
+          CFG.sites.push({siteId:r.siteId,name:site.name,status:site.status||'進行中',parentId:''});
           nameSet.add(site.name); added++;
         }
       }
@@ -2277,7 +2334,7 @@ async function toggleSiteStatus(siteId,current) {
     if (site) site.status=ns;
     saveCfg(); renderSiteListSettings();
     showPushResult(r.push);
-    toast('已更新並推送到工班','success');
+    toast(site&&site.parentId?'已更新（戶別不推送到打卡系統）':'已更新並推送到工班','success');
   } catch(e) { toast('更新失敗','error'); }
 }
 
@@ -2285,6 +2342,37 @@ async function toggleSiteStatus(siteId,current) {
 //  工具
 // ═══════════════════════════════════════
 function fmt(v) { return '$'+(Number(v)||0).toLocaleString('zh-TW'); }
+
+// 把「案場名稱 → 金額物件」的 map 依母案場／戶別分組輸出表格列：
+//   母案場有戶別時：一列粗體「整棟合計」（自己＋各戶），底下縮排列出「共用／人力」（母案場自己）與各戶；
+//   沒有戶別的案場：照原本一列。金額大的排前面。
+function groupSiteRows(map, emptyV, addV, rowHtml, unknown) {
+  const total = v => Object.values(v).reduce((a,b)=>a+(b||0),0);
+  const used = new Set();
+  const groups = [];
+  Object.keys(map).forEach(name=>{
+    if (used.has(name)) return;
+    const site = siteByName(name);
+    const parent = site ? (siteParentOf(site) || site) : null;
+    if (!parent || siteChildren(parent.siteId).length===0) {
+      used.add(name);
+      groups.push({ label:name, self:map[name], kids:[], sum:map[name], warn:unknown.includes(name) });
+      return;
+    }
+    const self = map[parent.name] || emptyV();
+    used.add(parent.name);
+    const kids = siteChildren(parent.siteId).filter(c=>map[c.name]).map(c=>{ used.add(c.name); return { label:unitLabel(c), v:map[c.name] }; });
+    const sum = kids.reduce((a,k)=>addV(a,k.v), addV(emptyV(), self));
+    groups.push({ label:parent.name, self, kids, sum, grouped:true });
+  });
+  groups.sort((a,b)=>total(b.sum)-total(a.sum));
+  return groups.map(g=>{
+    if (!g.grouped) return rowHtml(g.label, g.self, '', g.warn);
+    return rowHtml(`${g.label} <span class="grp-tag">整棟合計 · ${siteChildren(siteByName(g.label).siteId).length} 戶</span>`, g.sum, 'grp-row')
+      + (total(g.self)>0 ? rowHtml('<span class="grp-sub">└ 共用／人力（未分攤）</span>', g.self, 'grp-child') : '')
+      + g.kids.map(k=>rowHtml(`<span class="grp-sub">└ ${k.label}</span>`, k.v, 'grp-child')).join('');
+  }).join('');
+}
 
 function toast(msg,type='') {
   const el=document.getElementById('toast');
