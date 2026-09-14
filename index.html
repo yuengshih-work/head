@@ -2410,7 +2410,7 @@ function groupSiteRows(map, emptyV, addV, rowHtml, unknown) {
     }
     const self = map[parent.name] || emptyV();
     used.add(parent.name);
-    const kids = siteChildren(parent.siteId).filter(c=>map[c.name]).map(c=>{ used.add(c.name); return { label:unitLabel(c), v:map[c.name] }; });
+    const kids = siteChildren(parent.siteId).map(c=>{ used.add(c.name); return { label:unitLabel(c), v:map[c.name]||emptyV() }; });
     const sum = kids.reduce((a,k)=>addV(a,k.v), addV(emptyV(), self));
     groups.push({ label:parent.name, self, kids, sum, grouped:true });
   });
