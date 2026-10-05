@@ -48,6 +48,7 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 .card-body{padding:14px 16px}
 .section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
 .section-hd h3{font-size:14px;font-weight:600}
+
 .stat-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 @media(min-width:900px){.stat-row{grid-template-columns:repeat(3,1fr)}}
 .stat{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
@@ -101,8 +102,19 @@ body{font-family:'Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:460px}
 th{text-align:left;padding:8px 10px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;white-space:nowrap}
-td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
 tr:last-child td{border-bottom:none}
+td:first-child{white-space:nowrap}
+.ap-sum{font-size:26px;font-weight:700;color:var(--danger)}
+.ap-row-sub td{font-size:12px;color:#555;background:#fafafa}
+.ap-crew-hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ap-tag{font-size:11px;color:var(--muted)}
+.ap-warn{font-size:12px;color:var(--warn);margin-top:4px}
+.ap-err{font-size:12px;color:var(--danger);margin-top:4px}
+.ap-click{cursor:pointer}
+.ap-due{padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px;width:140px}
+.ap-tl td{vertical-align:top}
+.ap-tl td:nth-child(2){white-space:normal}
 tbody tr:active td{background:#fafafa}
 .grp-row td{background:#f3faf7;font-weight:700}
 .grp-tag{font-size:10px;font-weight:500;color:var(--muted);margin-left:4px}
@@ -292,6 +304,9 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
             <select id="exp-request-by"><option value="">— 選擇 —</option></select>
           </div>
         </div>
+        <div id="exp-due-row" class="field"><label>預計付款日（選填，應付帳款依此排序）</label>
+          <input type="date" id="exp-due-date">
+        </div>
         <div id="exp-paymethod-row" style="display:none" class="form-row">
           <div class="field"><label>出帳方式</label>
             <div class="toggle-grp">
@@ -407,6 +422,23 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
       <div id="payroll-area"></div>
     </div>
 
+    <!-- 應付帳款 -->
+    <div id="page-payables" class="page">
+      <div class="card"><div class="card-body">
+        <div class="section-hd"><h3>應付帳款</h3></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div class="field" style="margin:0;flex:1;min-width:180px"><label>查看日</label>
+            <input type="date" id="ap-date">
+          </div>
+          <button class="btn primary" onclick="loadPayables()">查詢</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">
+          以查看日為準，算出各工班「下一個發薪日」要發的工資（未標記已發放者），加上未付代墊款與未付／需請款支出。薪資與代墊即時向打卡系統查詢；在打卡後台「標記已發放」後重新查詢即會扣掉。
+        </div>
+      </div></div>
+      <div id="payables-area"></div>
+    </div>
+
     <!-- 報表 -->
     <div id="page-report" class="page">
       <div class="card"><div class="card-body">
@@ -490,6 +522,9 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
     </button>
     <button class="nav-btn" onclick="showPage('expense')" id="nav-expense">
       <span class="ni">🧾</span><span>支出</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('payables')" id="nav-payables">
+      <span class="ni">📅</span><span>應付</span>
     </button>
     <button class="nav-btn" onclick="showPage('payroll')" id="nav-payroll">
       <span class="ni">💵</span><span>薪資</span>
@@ -700,7 +735,7 @@ function showPage(p) {
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
   document.getElementById('nav-'+p).classList.add('active');
-  const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payroll:renderPayroll,report:renderReport,settings:renderSettings};
+  const renders={dashboard:renderDashboard,labor:renderLabor,expense:renderExpense,income:renderIncome,payables:renderPayables,payroll:renderPayroll,report:renderReport,settings:renderSettings};
   renders[p]();
 }
 
@@ -1132,6 +1167,7 @@ function setPayStatus(s) {
   });
   document.getElementById('exp-request-row').style.display = s==='需請款'?'':'none';
   document.getElementById('exp-paymethod-row').style.display = s==='已付'?'':'none';
+  document.getElementById('exp-due-row').style.display = s==='已付'?'none':'';
   if (s==='已付' && !document.getElementById('exp-paid-date').value) document.getElementById('exp-paid-date').value=today();
 }
 function setPayMethod(m) {
@@ -1169,6 +1205,7 @@ async function submitExpense() {
       requestBy: expenseState.payStatus==='需請款' ? (document.getElementById('exp-request-by')?.value||'') : '',
       payMethod: expenseState.payStatus==='已付' ? expenseState.payMethod : '',
       paidDate: expenseState.payStatus==='已付' ? (document.getElementById('exp-paid-date').value||document.getElementById('exp-date').value) : '',
+      dueDate:  expenseState.payStatus==='已付' ? '' : (document.getElementById('exp-due-date').value||''),
       note:document.getElementById('exp-note').value
     });
 
@@ -1177,7 +1214,7 @@ async function submitExpense() {
       await uploadFile(file, r.expenseId);
     }
 
-    ['exp-vendor','exp-desc','exp-amount','exp-invoice','exp-note'].forEach(id=>{ document.getElementById(id).value=''; });
+    ['exp-vendor','exp-desc','exp-amount','exp-invoice','exp-note','exp-due-date'].forEach(id=>{ document.getElementById(id).value=''; });
     document.getElementById('exp-file').value='';
     document.getElementById('exp-file-preview').textContent='';
     toast('已新增支出紀錄','success');
@@ -1347,6 +1384,7 @@ function editExpenseDialog(r) {
   const pmBtns=methods.map(m=>`<button id="ee-pm-${m}" class="${r['出帳方式']===m?'active':''}" onclick="document.querySelectorAll('[id^=ee-pm-]').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${m}</button>`).join('');
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const div = document.createElement('div');
+  div.id = 'ee-modal';
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
   div.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:100%;margin:auto">
     <div style="font-size:15px;font-weight:600;margin-bottom:14px">編輯支出</div>
@@ -1397,6 +1435,10 @@ function editExpenseDialog(r) {
         </div>
       </div>
     </div>
+    <div id="ee-due-wrap" style="${r['付款狀態']==='已付'?'display:none;':''}margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">預計付款日</div>
+      <input type="date" id="ee-due-date" value="${String(r['預計付款日']||'').slice(0,10)}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">
+    </div>
     <div id="ee-paymethod-wrap" style="${r['付款狀態']==='已付'?'':'display:none'};margin-bottom:10px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>
@@ -1423,6 +1465,7 @@ function editExpenseDialog(r) {
     b.addEventListener('click',()=>{
       const paid = b.id==='ee-st-已付';
       document.getElementById('ee-paymethod-wrap').style.display = paid ? '' : 'none';
+      document.getElementById('ee-due-wrap').style.display = paid ? 'none' : '';
       if (paid && !document.getElementById('ee-paid-date').value) document.getElementById('ee-paid-date').value=today();
     });
   });
@@ -1435,9 +1478,9 @@ async function submitEditExpense(id) {
   const payStatus = activeSt?.textContent==='請款'?'需請款':(activeSt?.textContent||'未付');
   const activePm = document.querySelector('[id^=ee-pm-].active');
   const paidDate = document.getElementById('ee-paid-date')?.value||'';
-  document.querySelector('div[style*="rgba(0,0,0,.4)"]')?.remove();
-  try {
-    await costApi({
+  const dueDate  = payStatus==='已付' ? '' : (document.getElementById('ee-due-date')?.value||'');
+  // 先讀完所有欄位再關視窗（原本先關視窗，後面欄位會讀不到）
+  const payload = {
       action:'updateExpense', expenseId:id,
       date:    document.getElementById('ee-date')?.value,
       siteId, siteName,
@@ -1450,7 +1493,11 @@ async function submitEditExpense(id) {
       payMethod: payStatus==='已付' ? (activePm?.textContent||'現金') : '',
       paidDate:  payStatus==='已付' ? (paidDate||today()) : '',
       note:    document.getElementById('ee-note')?.value
-    });
+  };
+  document.getElementById('ee-modal')?.remove();
+  try {
+    await costApi(payload);
+    await costApi({action:'setExpenseDueDate', expenseId:id, dueDate});
     toast('支出已更新','success'); loadExpenses();
   } catch(e) { toast('更新失敗：'+(e.message||e),'error'); }
 }
@@ -2214,6 +2261,138 @@ async function loadReport() {
 // ═══════════════════════════════════════
 //  設定
 // ═══════════════════════════════════════
+// ═══════════════════════════════════════
+//  應付帳款
+// ═══════════════════════════════════════
+function renderPayables() {
+  const el=document.getElementById('ap-date');
+  if (!el.value) el.value=today();
+  if (!document.getElementById('payables-area').innerHTML) loadPayables();
+}
+const WD='日一二三四五六';
+function apDateLabel(d) { if(!d) return ''; const x=new Date(d+'T12:00:00'); return `${d.slice(5).replace('-','/')}（${WD[x.getDay()]}）`; }
+function apToggle(id) { document.querySelectorAll('.'+id).forEach(r=>r.style.display=r.style.display==='none'?'':'none'); }
+
+async function loadPayables() {
+  const area=document.getElementById('payables-area');
+  if (!CFG.costUrl) { area.innerHTML='<div class="empty">請先到設定填費用系統 URL</div>'; return; }
+  const date=document.getElementById('ap-date').value||today();
+  area.innerHTML='<div class="card"><div class="card-body"><div class="empty">查詢中…（會即時向各工班打卡系統查詢，約需數秒）</div></div></div>';
+  let d;
+  try { d=await costApi({action:'getPayables',date}); }
+  catch(e) { area.innerHTML=`<div class="card"><div class="card-body"><div class="ap-err">查詢失敗：${e.message||e}</div></div></div>`; return; }
+
+  const sumBy=(arr,f)=>arr.reduce((a,x)=>a+(Number(f(x))||0),0);
+  const crews=d.crews||[];
+  crews.forEach(c=>{
+    c.salNow=sumBy(c.employees,e=>e.net);
+    c.salOver=sumBy(c.employees,e=>e.overdueNet);
+    c.adv=sumBy(c.advances,a=>a.amount);
+  });
+  const exp=d.expenses||[];
+  const expTot=sumBy(exp,x=>x.amount);
+  const grand=sumBy(crews,c=>c.salNow+c.salOver+c.adv)+expTot;
+
+  // 卡片：每個工班一張（發薪日＋應備）＋支出一張
+  const cards=crews.map(c=>`
+    <div class="stat"><div class="stat-label">${c.name}${c.payday?` · ${apDateLabel(c.payday)} 發薪`:''}</div>
+      <div class="stat-value" style="color:var(--danger)">${fmt(c.salNow+c.salOver+c.adv)}</div>
+      <div class="ap-tag">本期薪資 ${fmt(c.salNow)}${c.salOver?` ＋ 前期未發 ${fmt(c.salOver)}`:''}${c.adv?` ＋ 代墊 ${fmt(c.adv)}`:''}</div>
+    </div>`).join('')+`
+    <div class="stat"><div class="stat-label">未付／需請款支出</div>
+      <div class="stat-value" style="color:var(--danger)">${fmt(expTot)}</div>
+      <div class="ap-tag">${exp.length} 筆</div>
+    </div>`;
+
+  // 薪資＋代墊：每個工班一張卡
+  const crewBlocks=crews.map(c=>{
+    const emps=c.employees||[];
+    const empRows=emps.map(e=>`<tr>
+        <td>${e.name}${e.hasReceipt?'':' <span class="ap-tag">無勞報 扣7%</span>'}</td>
+        <td>${e.days}</td><td>${fmt(e.gross)}</td><td>${e.deduction?'-'+fmt(e.deduction):'—'}</td>
+        <td style="font-weight:600">${fmt(e.net)}</td>
+        <td>${e.overdueDays?`<span class="badge unpaid">${e.overdueDays} 天 ${fmt(e.overdueNet)}</span>`:'—'}</td>
+        <td style="font-weight:700">${fmt(e.net+e.overdueNet)}</td>
+      </tr>`).join('');
+    const advRows=(c.advances||[]).sort((a,b)=>a.date<b.date?-1:1).map(a=>`<tr>
+        <td>${a.name}</td><td>${a.date}</td><td>${a.site||''}</td><td>${a.items||''}</td><td>${a.invoice||''}</td>
+        <td style="font-weight:600">${fmt(a.amount)}</td></tr>`).join('');
+    return `<div class="card"><div class="card-body">
+      <div class="ap-crew-hd">
+        <h3 style="margin:0">${c.name}</h3>
+        <span class="ap-tag">${c.ruleText||'未設定發薪規則'}${c.payday?` ｜ 發薪日 ${apDateLabel(c.payday)} ｜ 工作區間 ${c.start} ~ ${c.end}`:''}</span>
+      </div>
+      ${c.error?`<div class="ap-err">⚠ ${c.error}</div>`:''}
+      ${c.warn?`<div class="ap-warn">⚠ ${c.warn}（請到設定填發薪規則）</div>`:''}
+      ${c.payday && c.end>today()?`<div class="ap-tag" style="margin-top:4px">工作區間尚未結束，金額只算到目前已下班的出工，之後還會增加。</div>`:''}
+      <div style="font-size:12px;font-weight:600;margin:12px 0 4px">未發放薪資</div>
+      ${emps.length?`<div class="tbl-wrap"><table>
+        <thead><tr><th>員工</th><th>本期天數</th><th>應發</th><th>扣繳</th><th>本期實發</th><th>前期未發</th><th>應付合計</th></tr></thead>
+        <tbody>${empRows}</tbody>
+        <tfoot><tr class="tfoot-row"><td>小計</td><td>${sumBy(emps,e=>e.days)}</td><td>${fmt(sumBy(emps,e=>e.gross))}</td><td>${fmt(sumBy(emps,e=>e.deduction))}</td><td>${fmt(c.salNow)}</td><td>${fmt(c.salOver)}</td><td>${fmt(c.salNow+c.salOver)}</td></tr></tfoot>
+      </table></div>`:'<div class="empty">沒有未發放的薪資</div>'}
+      <div style="font-size:12px;font-weight:600;margin:14px 0 4px">未付代墊款（截至查看日）</div>
+      ${(c.advances||[]).length?`<div class="tbl-wrap"><table>
+        <thead><tr><th>員工</th><th>日期</th><th>案場</th><th>品項</th><th>發票</th><th>金額</th></tr></thead>
+        <tbody>${advRows}</tbody>
+        <tfoot><tr class="tfoot-row"><td>小計</td><td></td><td></td><td></td><td></td><td>${fmt(c.adv)}</td></tr></tfoot>
+      </table></div>`:'<div class="empty">沒有未付代墊款</div>'}
+    </div></div>`;
+  }).join('');
+
+  // ── 依預計付款日排序的時間軸 ──
+  const vd=d.viewDate;
+  const items=[];
+  crews.forEach(c=>{
+    const sal=c.salNow+c.salOver;
+    if (sal) items.push({ date:c.payday||'', kind:'sal', title:`${c.name} 薪資`, sub:`${c.start||''} ~ ${c.end||''} 未發 ${c.employees.length} 人${c.salOver?`（含前期未發 ${fmt(c.salOver)}）`:''}`, amount:sal });
+    if (c.adv) items.push({ date:c.payday||'', kind:'adv', title:`${c.name} 代墊款`, sub:`${c.advances.length} 筆，隨發薪日一起付`, amount:c.adv });
+  });
+  exp.forEach(x=>items.push({ date:x.dueDate||'', kind:'exp', x, title:x.vendor, sub:`${x.site||''}・${x.desc||''}${x.invoice?'・'+x.invoice:''}`, amount:x.amount }));
+  const kindOrd={sal:0,adv:1,exp:2};
+  const dated=items.filter(i=>i.date).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(kindOrd[a.kind]-kindOrd[b.kind]));
+  const undated=items.filter(i=>!i.date).sort((a,b)=>b.amount-a.amount);
+  const byDate={}; dated.forEach(i=>(byDate[i.date]=byDate[i.date]||[]).push(i));
+
+  const itemRow=i=>{
+    const tag = i.kind==='sal'?'<span class="badge paid">薪資</span>':i.kind==='adv'?'<span class="badge tax">代墊</span>':`<span class="badge ${i.x.status==='需請款'?'unpaid':''}">${i.x.status}</span>`;
+    const dateCell = i.kind==='exp'
+      ? `<input type="date" class="ap-due" value="${i.date}" onchange="setDueDate('${i.x.id}',this.value)" title="改預計付款日">`
+      : `<span class="ap-tag">發薪日</span>`;
+    return `<tr><td>${dateCell}</td><td>${tag} <b>${i.title}</b><div class="ap-tag">${i.sub}</div></td><td style="font-weight:700;text-align:right">${fmt(i.amount)}</td><td></td></tr>`;
+  };
+  let run=0;
+  const dateBlocks=Object.keys(byDate).sort().map(dt=>{
+    const list=byDate[dt]; const sub=sumBy(list,i=>i.amount); run+=sub;
+    const late=dt<vd;
+    return `<tr class="grp-row"><td>${apDateLabel(dt)}${late?' <span class="badge" style="background:#fee2e2;color:#b91c1c">已逾期</span>':''}</td><td><span class="ap-tag">${list.length} 筆</span></td><td style="text-align:right">${fmt(sub)}</td><td style="text-align:right;color:var(--danger)">${fmt(run)}</td></tr>`+list.map(itemRow).join('');
+  }).join('');
+  const undatedTot=sumBy(undated,i=>i.amount);
+  const undatedBlock=undated.length?`<tr class="grp-row"><td>未排定</td><td><span class="ap-tag">${undated.length} 筆・在左邊填日期就會排進上面</span></td><td style="text-align:right">${fmt(undatedTot)}</td><td style="text-align:right;color:var(--danger)">${fmt(run+undatedTot)}</td></tr>`+undated.map(itemRow).join(''):'';
+  const expBlock=`<div class="card"><div class="card-body">
+    <div class="ap-crew-hd"><h3 style="margin:0">依預計付款日</h3><span class="ap-tag">「至此累計」＝到那一天為止總共要備多少錢；支出可直接改日期</span></div>
+    ${items.length?`<div class="tbl-wrap" style="margin-top:8px"><table class="ap-tl">
+      <thead><tr><th style="width:150px">付款日</th><th>項目</th><th style="text-align:right">金額</th><th style="text-align:right">至此累計</th></tr></thead>
+      <tbody>${dateBlocks}${undatedBlock}</tbody>
+    </table></div>`:'<div class="empty">沒有應付款項</div>'}
+  </div></div>`;
+
+  area.innerHTML=`
+    <div class="card"><div class="card-body">
+      <div class="section-hd"><h3>應備金額合計</h3><span class="ap-tag">查看日 ${apDateLabel(d.viewDate)}</span></div>
+      <div class="ap-sum">${fmt(grand)}</div>
+      <div class="ap-tag">＝ 各工班下一次發薪（含前期未發）＋ 未付代墊 ＋ 未付／需請款支出</div>
+    </div></div>
+    <div class="stat-row">${cards}</div>
+    ${expBlock}
+    ${crewBlocks}`;
+}
+
+async function setDueDate(id, v) {
+  try { await costApi({action:'setExpenseDueDate', expenseId:id, dueDate:v||''}); toast(v?'預計付款日已更新':'已清除預計付款日','success'); loadPayables(); }
+  catch(e) { toast('更新失敗：'+(e.message||e),'error'); }
+}
+
 function renderSettings() {
   document.getElementById('cost-url').value=CFG.costUrl||'';
   renderCrewList();
@@ -2226,6 +2405,9 @@ function renderCrewList() {
     <div style="margin-bottom:12px">
       <div class="field" style="margin-bottom:6px"><label>${c['工班名稱']||c['工班代號']+'工班'} URL</label>
         <input type="text" id="crew-url-${c['工班代號']}" value="${CFG.crewUrls[c['工班代號']]||c['Apps Script URL']||''}" placeholder="https://script.google.com/macros/s/…/exec">
+      </div>
+      <div class="field" style="margin-bottom:6px"><label>發薪規則（例：每月5日＝發上個月；每週五＝發當週週六～週五）</label>
+        <input type="text" id="crew-rule-${c['工班代號']}" value="${c['發薪規則']||''}" placeholder="每月5日 / 每週五">
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn sm" onclick="testCrewUrl('${c['工班代號']}')">測試連線</button>
@@ -2300,7 +2482,15 @@ async function saveCrewUrl(code) {
   CFG.crewUrls[code]=url;
   saveCfg();
   if (CFG.costUrl) { try { await costApi({action:'saveCrewUrl',crew:code,url}); } catch(e){} }
-  toast(code+'工班 URL 已儲存','success');
+  const ruleEl=document.getElementById('crew-rule-'+code);
+  if (ruleEl && CFG.costUrl) {
+    const rule=ruleEl.value.trim();
+    try {
+      await costApi({action:'saveCrewPayRule',crew:code,rule});
+      const c=CFG.crews.find(x=>x['工班代號']===code); if (c) { c['發薪規則']=rule; saveCfg(); }
+    } catch(e) { toast('發薪規則未儲存：'+(e.message||e),'error'); return; }
+  }
+  toast(code+'工班設定已儲存','success');
 }
 
 async function testCrewUrl(code) {
@@ -2447,4 +2637,3 @@ function closeModal(){ const m=document.getElementById('app-modal'); if(m) m.rem
 </script>
 </body>
 </html>
-
