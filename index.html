@@ -1763,12 +1763,54 @@ function cashEntries() {
     const t = SH_TYPES[x['類型']]; if (!t || !t.cash) return;
     out.push({ date: D10(x['日期']), cat: '股東往來・' + x['類型'], who: x['股東'], desc: x['說明'] || '', method: x['方式'] || '未指定', amt: t.cash * N(x['金額']), src: 'sh', id: x['記錄ID'] });
   });
+  DB['零用金'].forEach(x => {
+    const t = MANUAL_TYPES[x['類型']]; if (!t) return;
+    const amt = N(x['金額']), base = { date: D10(x['日期']), cat: '手動・' + t.label, who: x['經手人'] || '', desc: x['說明'] || '', src: 'manual', id: x['記錄ID'] };
+    if (t.transfer) {   // 現金 ↔ 銀行 互轉：全部檢視中互相抵銷，不列
+      out.push(Object.assign({}, base, { method: '現金', amt: t.cash * amt, transfer: true }));
+      out.push(Object.assign({}, base, { method: '匯款', amt: -t.cash * amt, transfer: true }));
+    } else out.push(Object.assign({}, base, { method: x['方式'] || '現金', amt: t.sign * amt }));
+  });
   return out.filter(e => e.date);
+}
+// 手動收支類型（存在「零用金」分頁）
+const MANUAL_TYPES = {
+  '其他收入': { label: '其他收入', sign: 1, dir: 1 },
+  '其他支出': { label: '其他支出', sign: -1, dir: -1 },
+  '提領現金': { label: '提領現金', transfer: true, cash: 1, dir: 1 },
+  '存入銀行': { label: '存入銀行', transfer: true, cash: -1, dir: -1 },
+  '零用金撥補': { label: '提領現金', transfer: true, cash: 1, dir: 1 },
+  '繳回銀行': { label: '存入銀行', transfer: true, cash: -1, dir: -1 }
+};
+function editManual(x, dir) {
+  const isNew = !x;
+  const d = Object.assign({ '日期': TODAY, '類型': dir < 0 ? '其他支出' : '其他收入', '方式': CASHF.scope === '銀行' ? '匯款' : '現金', '經手人': shareholders()[0] || '' }, x || {});
+  const want = isNew ? dir : (MANUAL_TYPES[d['類型']] || {}).dir;
+  const types = Object.keys(MANUAL_TYPES).filter(k => ['零用金撥補', '繳回銀行'].indexOf(k) < 0 || k === d['類型']).filter(k => !want || MANUAL_TYPES[k].dir === want);
+  const tl = { '其他收入': '其他收入（例：退款、利息、雜項收入）', '其他支出': '其他支出（例：雜支、手續費、零星採購）', '提領現金': '提領現金（從銀行領出，現金增加、銀行減少）', '存入銀行': '存入銀行（現金存回銀行，現金減少、銀行增加）', '零用金撥補': '提領現金', '繳回銀行': '存入銀行' };
+  const fields = [
+    { k: '日期', label: '日期', type: 'date', req: true },
+    { k: '類型', label: '類型', type: 'select', options: types.map(k => ({ v: k, l: tl[k] })), full: true },
+    { k: '金額', label: '金額', type: 'number', req: true },
+    { k: '方式', label: '收付方式', type: 'select', options: ['現金', '匯款', '支票', '刷卡'] },
+    { k: '經手人', label: '經手人' },
+    { k: '說明', label: '說明', type: 'textarea' }
+  ];
+  dialog({ title: isNew ? (dir < 0 ? '登記減少' : '登記增加') : '編輯手動收支', body: formHTML(fields, d),
+    onOpen: ({ bd }) => { const sync = () => $('[data-k=方式]', bd).classList.toggle('hide', !!(MANUAL_TYPES[$('[name=類型]', bd).value] || {}).transfer); $('[name=類型]', bd).onchange = sync; sync(); },
+    buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('刪除這筆手動收支？', '刪除', 'danger')) return false; await removeRows('零用金', [d['記錄ID']]); toast('已刪除'); render(); } }])
+      .concat(['|', { text: '取消', cls: 'ghost' }, { text: '儲存', cls: 'acc', click: async ({ bd }) => {
+        const o = formData(bd, fields);
+        if (N(o['金額']) <= 0) throw new Error('金額需大於 0');
+        if ((MANUAL_TYPES[o['類型']] || {}).transfer) o['方式'] = '';
+        if (!isNew) o['記錄ID'] = d['記錄ID'];
+        await saveRow('零用金', o); toast('已儲存'); render();
+      } }]) });
 }
 function cashOpening(scope) { try { return (JSON.parse(SET.CASH_OPENING || '{}') || {})[scope] || null; } catch (e) { return null; } }
 function pgCash(el) {
   if (!CASHF.from) { CASHF.from = TODAY.slice(0, 8) + '01'; CASHF.to = ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)); }
-  const all = cashEntries().filter(e => inScope(e.method, CASHF.scope));
+  const all = cashEntries().filter(e => inScope(e.method, CASHF.scope) && !(e.transfer && CASHF.scope === '全部'));
   const op = cashOpening(CASHF.scope);
   let open = null;
   if (op) {
@@ -1785,7 +1827,7 @@ function pgCash(el) {
   const net = sum(rows, e => e.amt);
   const preset = (l, f, t) => `<button class="btn ghost sm" data-rng="${f}|${t}">${l}</button>`;
   const thisM = TODAY.slice(0, 8) + '01', lastMEnd = addDays(thisM, -1), lastM = lastMEnd.slice(0, 8) + '01';
-  el.innerHTML = `<h1 class="pg">現金收支表<span class="sp"></span><button class="btn ghost" id="cashCsv">匯出 CSV</button></h1>
+  el.innerHTML = `<h1 class="pg">現金收支表<span class="sp"></span><button class="btn ghost" id="cashCsv">匯出 CSV</button><button class="btn okb" id="manAdd">＋ 增加</button><button class="btn acc" id="manSub">− 減少</button></h1>
     <div class="toolbar">
       <label class="small muted">期間 <input type="date" id="cf" value="${CASHF.from}"></label><label class="small muted">至 <input type="date" id="ct" value="${CASHF.to}"></label>
       ${preset('本月', thisM, ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)))}${preset('上月', lastM, lastMEnd)}${preset('今年', TODAY.slice(0, 4) + '-01-01', TODAY.slice(0, 4) + '-12-31')}
@@ -1809,7 +1851,7 @@ function pgCash(el) {
         <td class="num ar">${e.amt > 0 ? money(e.amt) : ''}</td><td class="num ap">${e.amt < 0 ? money(-e.amt) : ''}</td>${!CASHF.cat && open != null ? `<td class="num">${money(bal)}</td>` : ''}</tr>`; }).join('') || '<tr><td colspan="8" class="empty">這段期間沒有收支</td></tr>'}
     </tbody></table></div>
     <div class="sumbar"><span>收入 <b class="ar">${money(sum(shown.filter(e => e.amt > 0), e => e.amt))}</b></span><span>支出 <b class="ap">${money(-sum(shown.filter(e => e.amt < 0), e => e.amt))}</b></span><span>淨額 <b>${money(sum(shown, e => e.amt))}</b></span>
-      <span class="muted">不含股東代墊／股東代收（未經公司帳戶）</span></div></div>`;
+      <span class="muted">不含股東代墊／股東代收（未經公司帳戶）；手動收支用右上「＋ 增加／− 減少」登記</span></div></div>`;
   $('#cf').onchange = e => { CASHF.from = e.target.value; render(); };
   $('#ct').onchange = e => { CASHF.to = e.target.value; render(); };
   $$('[data-rng]', el).forEach(b => b.onclick = () => { [CASHF.from, CASHF.to] = b.dataset.rng.split('|'); render(); });
@@ -1822,7 +1864,10 @@ function pgCash(el) {
     if (tr.dataset.src === 'exp') editExpense(DB['支出'].find(x => x['記錄ID'] === id));
     if (tr.dataset.src === 'pay') editPayroll(DB['薪資發放'].find(x => x['發放ID'] === id));
     if (tr.dataset.src === 'sh') editSh(DB['股東往來'].find(x => x['記錄ID'] === id));
+    if (tr.dataset.src === 'manual') editManual(DB['零用金'].find(x => x['記錄ID'] === id));
   });
+  $('#manAdd').onclick = () => editManual(null, 1);
+  $('#manSub').onclick = () => editManual(null, -1);
   $('#setOpen').onclick = e => {
     e.preventDefault();
     const f = [{ k: 'date', label: '期初日期（這天開始前的餘額）', type: 'date', def: op ? op.date : CASHF.from, req: true }, { k: 'amt', label: CASHF.scope + '餘額', type: 'number', def: op ? op.amt : '', req: true }];
