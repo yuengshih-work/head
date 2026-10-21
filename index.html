@@ -356,8 +356,8 @@ function jsonp(url, params) {
 /* =====================================================================
    資料
    ===================================================================== */
-const DB = { '備忘': [], '案場': [], '合約': [], '收款紀錄': [], '支出': [], '人力費用': [], '薪資發放': [], '工班設定': [] };
-const IDK = { '備忘': '備忘ID', '案場': '案場ID', '合約': '合約ID', '收款紀錄': '收款ID', '支出': '記錄ID', '人力費用': '記錄ID', '薪資發放': '發放ID', '工班設定': '工班代號' };
+const DB = { '股東往來': [], '備忘': [], '案場': [], '合約': [], '收款紀錄': [], '支出': [], '人力費用': [], '薪資發放': [], '工班設定': [] };
+const IDK = { '股東往來': '記錄ID', '備忘': '備忘ID', '案場': '案場ID', '合約': '合約ID', '收款紀錄': '收款ID', '支出': '記錄ID', '人力費用': '記錄ID', '薪資發放': '發放ID', '工班設定': '工班代號' };
 let SET = {};
 let CREWPAY = null, CREWPAY_ERR = '', CREWPAY_LOADING = false;
 
@@ -519,6 +519,8 @@ const ICONS = {
   site: '<svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V8l7-5 7 5v13M10 21v-6h4v6"/></svg>',
   pay: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.5-3.5 3-5.5 6-5.5s5.5 2 6 5.5M16 6h5M16 10h5M18 14h3"/></svg>',
   set: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  cash: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/></svg>',
+  sh: '<svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2.5 20c.4-3.3 2.6-5.3 5.5-5.3s5.1 2 5.5 5.3M14 15c.9-.6 1.9-.9 3-.9 2.5 0 4.2 1.7 4.5 4.6"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'
 };
 const PAGES = [
@@ -527,6 +529,8 @@ const PAGES = [
   { id: 'exp', label: '支出', icon: 'exp', bar: true },
   { id: 'con', label: '合約收款', icon: 'con', bar: true },
   { id: 'site', label: '案場專案', icon: 'site' },
+  { id: 'cash', label: '現金收支', icon: 'cash' },
+  { id: 'sh', label: '股東往來', icon: 'sh' },
   { id: 'pay', label: '薪資人力', icon: 'pay' },
   { id: 'set', label: '設定匯入', icon: 'set' }
 ];
@@ -557,7 +561,7 @@ function go(id, fromHash) {
   window.scrollTo(0, 0);
 }
 function render() {
-  const fn = { home: pgHome, arap: pgArap, exp: pgExp, con: pgCon, site: pgSite, pay: pgPay, set: pgSet }[PAGE] || pgHome;
+  const fn = { cash: pgCash, sh: pgSh, home: pgHome, arap: pgArap, exp: pgExp, con: pgCon, site: pgSite, pay: pgPay, set: pgSet }[PAGE] || pgHome;
   try { fn($('#app')); } catch (e) { console.error(e); $('#app').innerHTML = '<div class="note ap">畫面錯誤：' + esc(e.message) + '</div>'; }
   updateSelBar();
 }
@@ -881,7 +885,7 @@ async function syncAdvances() {
 function payExpensesDialog(ids) {
   const rows = DB['支出'].filter(x => ids.indexOf(x['記錄ID']) >= 0 && x['付款狀態'] !== '已付');
   if (!rows.length) return;
-  const fields = [{ k: 'payDate', label: '付款日期', type: 'date', def: TODAY, req: true }, { k: 'method', label: '出帳方式', type: 'select', options: PAY_METHODS, def: rows[0]['出帳方式'] || '匯款' }];
+  const fields = [{ k: 'payDate', label: '付款日期', type: 'date', def: TODAY, req: true }, { k: 'method', label: '出帳方式', type: 'select', options: EXP_METHODS, def: rows[0]['出帳方式'] || '匯款' }, shField()];
   const inp = 'style="width:120px;text-align:right;border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--paper)"';
   const dl = dialog({ title: '付款（' + rows.length + ' 筆）', wide: rows.length > 1,
     body: formHTML(fields) + `<div class="small muted" style="margin:12px 0 6px">「本次付款」預設為全額；改小即為部分付款，差額會自動保留為一筆未付。</div>
@@ -890,6 +894,7 @@ function payExpensesDialog(ids) {
         <label class="small muted" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">本次付款<input type="number" inputmode="decimal" data-payamt="${esc(x['記錄ID'])}" value="${N(x['金額'])}" min="0" max="${N(x['金額'])}" ${inp}></label></div>`).join('')}
       <div class="sumbar"><span>應付 <b>${money(sum(rows, x => x['金額']))}</b></span><span>本次付款 <b id="payTot">${money(sum(rows, x => x['金額']))}</b></span><span class="ap" id="payRest"></span></div></div>`,
     onOpen: ({ bd }) => {
+      bindShField(bd, 'method', '股東代墊');
       const upd = () => { const t = sum($$('[data-payamt]', bd), i => i.value); const all = sum(rows, x => x['金額']); $('#payTot', bd).textContent = money(t); $('#payRest', bd).innerHTML = t < all ? '保留未付 <b>' + money(all - t) + '</b>' : ''; };
       $$('[data-payamt]', bd).forEach(i => i.oninput = upd);
     },
@@ -905,6 +910,10 @@ function payExpensesDialog(ids) {
       if (!items.length) throw new Error('付款金額都是 0');
       const j = await api('payExpenses', { items, payDate: d.payDate, method: d.method, status: '已付' });
       j.rows.forEach(r => putRow('支出', r)); items.forEach(i => APSEL.delete(i.id)); reportCrew(j);
+      if (d.method === '股東代墊') {
+        await saveMany('股東往來', items.map(i => { const x = DB['支出'].find(r => r['記錄ID'] === i.id) || {}; const ex = shLinkOf('支出', i.id);
+          return { '記錄ID': ex ? ex['記錄ID'] : '', '日期': d.payDate, '股東': d['股東'], '類型': '股東墊付', '金額': i.amount, '方式': '', '案場ID': x['案場ID'] || '', '案場名稱': x['案場名稱'] || '', '說明': [x['廠商名稱'] || x['請款人員'], x['品項說明']].filter(Boolean).join('｜'), '來源類型': '支出', '來源記錄ID': i.id }; }));
+      }
       toast('已付款 ' + items.length + ' 筆' + (j.split ? '（部分付款 ' + j.split + ' 筆，餘額保留未付）' : '')); render();
     } }] });
 }
@@ -964,7 +973,8 @@ function editExpense(x, preset = {}) {
     { k: '請款人員', label: '請款人員（代墊者）', list: people },
     { k: '預計付款日', label: '預計付款日', type: 'date' },
     { k: '付款日期', label: '付款日期', type: 'date' },
-    { k: '出帳方式', label: '出帳方式', type: 'select', options: [''].concat(PAY_METHODS) },
+    { k: '出帳方式', label: '出帳方式', type: 'select', options: [''].concat(EXP_METHODS) },
+    shField((shLinkOf('支出', d['記錄ID']) || {})['股東']),
     { k: '附件網址', label: '附件／單據網址', full: true, ph: 'Google 雲端硬碟連結（選填）' },
     { k: '備註', label: '備註', type: 'textarea' }
   ];
@@ -980,7 +990,8 @@ function editExpense(x, preset = {}) {
         $('[data-k=出帳方式]', bd).classList.toggle('hide', s !== '已付');
         if (s === '已付' && !$('[name=付款日期]', bd).value) $('[name=付款日期]', bd).value = TODAY;
       };
-      $('[name=付款狀態]', bd).onchange = sync; sync();
+      const shs = bindShField(bd, '出帳方式', '股東代墊');
+      $('[name=付款狀態]', bd).onchange = () => { sync(); shs && shs(); }; sync(); shs && shs();
       if (d['附件網址']) $('[data-k=附件網址]', bd).insertAdjacentHTML('beforeend', `<a class="small" href="${esc(d['附件網址'])}" target="_blank" rel="noopener">開啟附件 ↗</a>`);
     },
     buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('確定刪除這筆支出？', '刪除', 'danger')) return false; await removeRows('支出', [d['記錄ID']]); toast('已刪除'); render(); } },
@@ -991,7 +1002,10 @@ function editExpense(x, preset = {}) {
         if (o['付款狀態'] === '需請款' && !o['請款人員']) throw new Error('需請款請填「請款人員」');
         o['案場名稱'] = (site(o['案場ID']) || {})['案場名稱'] || '';
         if (!isNew) o['記錄ID'] = d['記錄ID'];
-        await saveRow('支出', o); toast('已儲存'); render();
+        const sj = await saveRow('支出', o);
+        const sr = sj.row;
+        await syncShLink('支出', sr['記錄ID'], sr['付款狀態'] === '已付' && sr['出帳方式'] === '股東代墊', { '日期': sr['付款日期'] || sr['日期'], '股東': o['股東'], '類型': '股東墊付', '金額': N(sr['金額']), '案場ID': sr['案場ID'] || '', '案場名稱': sr['案場名稱'] || '', '說明': [sr['廠商名稱'] || sr['請款人員'], sr['品項說明']].filter(Boolean).join('｜') });
+        toast('已儲存'); render();
       } }]) });
 }
 
@@ -1133,7 +1147,8 @@ function receiptFields(d) {
     { k: '收款狀態', label: '狀態', type: 'select', options: ['未收', '已收'] },
     { k: '預計收款日', label: '預計收款日', type: 'date' },
     { k: '收款日期', label: '收款日期', type: 'date' },
-    { k: '付款方式', label: '付款方式', type: 'select', options: [''].concat(PAY_METHODS) },
+    { k: '付款方式', label: '付款方式', type: 'select', options: [''].concat(RCV_METHODS) },
+    shField((shLinkOf('收款紀錄', d['收款ID']) || {})['股東']),
     { k: '備註', label: '備註', type: 'textarea' }
   ];
 }
@@ -1152,7 +1167,8 @@ function editReceipt(r, preset = {}, after) {
     onOpen: ({ bd }) => {
       getAmt = bindTax(bd);
       const sync = () => { const got = $('[name=收款狀態]', bd).value === '已收'; $('[data-k=收款日期]', bd).classList.toggle('hide', !got); $('[data-k=付款方式]', bd).classList.toggle('hide', !got); if (got && !$('[name=收款日期]', bd).value) $('[name=收款日期]', bd).value = TODAY; };
-      $('[name=收款狀態]', bd).onchange = sync; sync();
+      const shs = bindShField(bd, '付款方式', '股東代收');
+      $('[name=收款狀態]', bd).onchange = () => { sync(); shs && shs(); }; sync(); shs && shs();
       $('[name=合約ID]', bd).onchange = e => { const c = DB['合約'].find(x => x['合約ID'] === e.target.value); if (!c) return; const on = $('[name=taxOn]', bd); if (!$('[name=未稅金額]', bd).value) { on.checked = c['含稅'] === '是'; $('[name=未稅金額]', bd).placeholder = '剩餘 ' + money(contractStat(c).rest); } };
     },
     buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('確定刪除這筆收款紀錄？', '刪除', 'danger')) return false; await removeRows('收款紀錄', [d['收款ID']]); toast('已刪除'); render(); if (after) after(); } }])
@@ -1165,7 +1181,9 @@ function editReceipt(r, preset = {}, after) {
         const c = DB['合約'].find(x => x['合約ID'] === o['合約ID']) || {};
         o['案場ID'] = c['案場ID'] || ''; o['案場名稱'] = c['案場名稱'] || '';
         if (!isNew) o['收款ID'] = d['收款ID'];
-        await saveRow('收款紀錄', o); toast('已儲存'); render(); if (after) after();
+        const rj = await saveRow('收款紀錄', o); const rr = rj.row;
+        await syncShLink('收款紀錄', rr['收款ID'], rr['收款狀態'] === '已收' && rr['付款方式'] === '股東代收', { '日期': rr['收款日期'], '股東': o['股東'], '類型': '股東代收', '金額': N(rr['收款金額']), '案場ID': rr['案場ID'] || '', '案場名稱': rr['案場名稱'] || '', '說明': '代收 ' + [rr['期別'], c['合約說明']].filter(Boolean).join('｜') });
+        toast('已儲存'); render(); if (after) after();
       } }]) });
 }
 function receiveDialog(r, after) {
@@ -1173,7 +1191,8 @@ function receiveDialog(r, after) {
   const p = rcvParts(r);
   const fields = [
     { k: '收款日期', label: '收款日期', type: 'date', def: TODAY, req: true },
-    { k: '付款方式', label: '付款方式', type: 'select', options: PAY_METHODS, def: '匯款' },
+    { k: '付款方式', label: '付款方式', type: 'select', options: RCV_METHODS, def: '匯款' },
+    shField(),
     { k: '_tax', type: 'html', html: taxBlock('實收', p, p.tax > 0) },
     { k: 'keep', label: '若實收較少，差額保留為未收（部分收款）', type: 'check', def: true },
     { k: '備註', label: '備註', type: 'textarea', def: r['備註'] || '' }
@@ -1181,7 +1200,7 @@ function receiveDialog(r, after) {
   let getAmt;
   dialog({ title: '收款：' + nameOfRow(r) + ' ' + (r['期別'] || ''),
     body: `<div class="note ok">預計 ${money(p.total)}${p.tax ? '（未稅 ' + money(p.net) + '＋稅 ' + money(p.tax) + '）' : ''}${r['預計收款日'] ? '　' + ymdFull(r['預計收款日']) : ''}</div>` + formHTML(fields),
-    onOpen: ({ bd }) => { getAmt = bindTax(bd); },
+    onOpen: ({ bd }) => { getAmt = bindTax(bd); bindShField(bd, '付款方式', '股東代收'); },
     buttons: [{ text: '取消', cls: 'ghost' }, '|', { text: '確認收款', cls: 'okb', click: async ({ bd }) => {
       const o = formData(bd, fields);
       const a = getAmt();
@@ -1190,6 +1209,7 @@ function receiveDialog(r, after) {
       const dNet = p.net - a.net, dTax = p.tax - a.tax;
       await saveRow('收款紀錄', { '收款ID': r['收款ID'], '收款狀態': '已收', '收款日期': o['收款日期'], '付款方式': o['付款方式'], '未稅金額': a.net, '稅額': a.tax, '收款金額': a.total, '備註': o['備註'] });
       if (p.total - a.total > 0 && o.keep === '是') await saveRow('收款紀錄', { '合約ID': r['合約ID'], '案場ID': r['案場ID'], '案場名稱': r['案場名稱'], '期別': (r['期別'] || '') + ' 餘額', '未稅金額': Math.max(0, dNet), '稅額': Math.max(0, dTax), '收款金額': p.total - a.total, '收款狀態': '未收', '預計收款日': r['預計收款日'] || '', '備註': '部分收款餘額' });
+      await syncShLink('收款紀錄', r['收款ID'], o['付款方式'] === '股東代收', { '日期': o['收款日期'], '股東': o['股東'], '類型': '股東代收', '金額': a.total, '案場ID': r['案場ID'] || '', '案場名稱': r['案場名稱'] || '', '說明': '代收 ' + [r['期別'], (DB['合約'].find(c => c['合約ID'] === r['合約ID']) || {})['合約說明']].filter(Boolean).join('｜') });
       toast('已收款 ' + money(a.total)); render(); if (after) after();
     } }] });
 }
@@ -1599,6 +1619,199 @@ function editPayroll(p) {
 }
 
 /* =====================================================================
+   股東往來
+   ===================================================================== */
+// 類型：bal = 對「公司欠股東」餘額的影響；cash = 對公司現金的影響
+const SH_TYPES = {
+  '股東墊付': { bal: 1, cash: 0, hint: '股東自己出錢幫公司付款' },
+  '股東代收': { bal: -1, cash: 0, hint: '客戶款項匯進股東個人帳戶／現金由股東收' },
+  '股東存入': { bal: 1, cash: 1, hint: '股東把錢放進公司（借給公司）' },
+  '公司還款': { bal: -1, cash: -1, hint: '公司把墊付款還給股東' },
+  '股東借支': { bal: -1, cash: -1, hint: '股東向公司拿錢' },
+  '股東還款': { bal: 1, cash: 1, hint: '股東把借支的錢還給公司' }
+};
+const shareholders = () => String(SET.SHAREHOLDERS || 'Elva').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+const EXP_METHODS = PAY_METHODS.concat(['股東代墊']);
+const RCV_METHODS = PAY_METHODS.concat(['股東代收']);
+function shField(def) { return { k: '股東', label: '哪位股東', type: 'select', options: shareholders(), def: def || shareholders()[0] }; }
+function bindShField(bd, methodName, trigger) {
+  const sel = $(`[name="${methodName}"]`, bd), box = $('[data-k=股東]', bd);
+  if (!sel || !box) return;
+  const sync = () => box.classList.toggle('hide', sel.value !== trigger || sel.closest('label').classList.contains('hide'));
+  sel.addEventListener('change', sync); sync();
+  return sync;
+}
+const shLinkOf = (srcType, srcId) => DB['股東往來'].find(x => x['來源類型'] === srcType && x['來源記錄ID'] === srcId);
+// 支出「股東代墊」、收款「股東代收」自動建立／更新／刪除對應的股東往來
+async function syncShLink(srcType, srcId, active, data) {
+  const ex = shLinkOf(srcType, srcId);
+  if (!active) { if (ex) await removeRows('股東往來', [ex['記錄ID']]); return; }
+  await saveRow('股東往來', Object.assign({ '記錄ID': ex ? ex['記錄ID'] : '', '來源類型': srcType, '來源記錄ID': srcId }, data));
+}
+function shBalances() {
+  const b = {};
+  shareholders().forEach(n => b[n] = 0);
+  DB['股東往來'].forEach(x => { const t = SH_TYPES[x['類型']]; if (!t) return; b[x['股東']] = (b[x['股東']] || 0) + t.bal * N(x['金額']); });
+  return b;
+}
+const SHF = { who: '', q: '' };
+function pgSh(el) {
+  const bal = shBalances();
+  let rows = DB['股東往來'].slice().sort((a, b) => D10(b['日期']).localeCompare(D10(a['日期'])) || String(b['建立時間']).localeCompare(String(a['建立時間'])));
+  if (SHF.who) rows = rows.filter(x => x['股東'] === SHF.who);
+  if (SHF.q) { const q = SHF.q.toLowerCase(); rows = rows.filter(x => ['說明', '類型', '案場名稱'].some(k => String(x[k] || '').toLowerCase().indexOf(q) >= 0)); }
+  // 逐筆餘額（依日期由舊到新累計）
+  const run = {}; const runMap = {};
+  DB['股東往來'].slice().sort((a, b) => D10(a['日期']).localeCompare(D10(b['日期'])) || String(a['建立時間']).localeCompare(String(b['建立時間']))).forEach(x => { const t = SH_TYPES[x['類型']]; if (!t) return; run[x['股東']] = (run[x['股東']] || 0) + t.bal * N(x['金額']); runMap[x['記錄ID']] = run[x['股東']]; });
+  const card = n => `<div class="kpi ${bal[n] > 0 ? 'ap' : bal[n] < 0 ? 'ar' : ''}" data-who="${esc(n)}" style="${SHF.who === n ? 'outline:2px solid var(--ink)' : ''}"><div class="l">${esc(n)}</div><div class="v">${money(Math.abs(bal[n] || 0))}</div><div class="s">${bal[n] > 0 ? '公司應還股東' : bal[n] < 0 ? '股東應還公司' : '已結清'}</div></div>`;
+  el.innerHTML = `<h1 class="pg">股東往來<span class="sp"></span><button class="btn" id="newSh">＋ 登記往來</button></h1>
+    <div class="kpis">${Object.keys(bal).map(card).join('')}</div>
+    <div class="toolbar"><select id="shWho"><option value="">全部股東</option>${Object.keys(bal).map(n => `<option${n === SHF.who ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <input type="search" id="shQ" placeholder="搜尋說明、案場…" value="${esc(SHF.q)}">
+      <span class="small muted">支出選「股東代墊」、收款選「股東代收」付款時會自動登記在這裡</span></div>
+    <div class="list">${rows.length ? rows.map(x => { const t = SH_TYPES[x['類型']] || { bal: 0 }; return `<div class="row click" data-shid="${esc(x['記錄ID'])}">
+      <div class="d">${md(x['日期'])}</div>
+      <div class="m"><div class="t1">${esc(x['股東'])}　<span class="pill ${t.bal > 0 ? 'ap' : 'ar'}">${esc(x['類型'])}</span>${x['方式'] ? ' <span class="pill">' + esc(x['方式']) + '</span>' : ''}${x['來源類型'] ? ' <span class="pill ok">自動</span>' : ''}</div>
+        <div class="t2">${esc([x['案場名稱'], x['說明']].filter(Boolean).join('｜'))}</div></div>
+      <div class="r"><div class="amt ${t.bal > 0 ? 'ap' : 'ar'}">${t.bal > 0 ? '+' : '−'}${money(x['金額'])}</div><span class="tiny muted">餘額 ${money(runMap[x['記錄ID']] || 0)}</span></div></div>`; }).join('') : '<div class="empty">尚無股東往來紀錄</div>'}
+      <div class="sumbar"><span>＋ 公司欠股東增加（墊付、存入、股東還款）</span><span>－ 減少（代收、公司還款、借支）</span></div></div>`;
+  $('#newSh').onclick = () => editSh(null, SHF.who ? { '股東': SHF.who } : {});
+  $('#shWho').onchange = e => { SHF.who = e.target.value; render(); };
+  $$('[data-who]', el).forEach(k => k.onclick = () => { SHF.who = SHF.who === k.dataset.who ? '' : k.dataset.who; render(); });
+  let qt; $('#shQ').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { SHF.q = e.target.value.trim(); render(); const q = $('#shQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 350); };
+  $$('[data-shid]', el).forEach(r => r.onclick = () => editSh(DB['股東往來'].find(x => x['記錄ID'] === r.dataset.shid)));
+}
+function editSh(x, preset = {}) {
+  const isNew = !x;
+  const d = Object.assign({ '日期': TODAY, '類型': '股東墊付', '股東': shareholders()[0], '方式': '現金' }, x || preset);
+  const fields = [
+    { k: '日期', label: '日期', type: 'date', req: true },
+    { k: '股東', label: '股東', type: 'select', options: [...new Set(shareholders().concat(d['股東'] ? [d['股東']] : []))], req: true },
+    { k: '類型', label: '類型', type: 'select', options: Object.keys(SH_TYPES).map(k => ({ v: k, l: k + '｜' + SH_TYPES[k].hint })), full: true },
+    { k: '金額', label: '金額', type: 'number', req: true },
+    { k: '方式', label: '方式', type: 'select', options: ['', '現金', '匯款', '支票', '其他'] },
+    { k: '案場ID', label: '相關案場（選填）', type: 'select', options: siteOptions(d['案場ID'], { blankText: '（無）' }), full: true },
+    { k: '說明', label: '說明', type: 'textarea' }
+  ];
+  const auto = !!d['來源類型'];
+  dialog({ title: isNew ? '登記股東往來' : '編輯股東往來',
+    body: (auto ? `<div class="note">這筆由${d['來源類型'] === '支出' ? '支出「股東代墊」' : '收款「股東代收」'}自動產生；改金額請回原紀錄修改。</div>` : '') + formHTML(fields, d),
+    buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('刪除這筆股東往來？', '刪除', 'danger')) return false; await removeRows('股東往來', [d['記錄ID']]); toast('已刪除'); render(); } }])
+      .concat(['|', { text: '取消', cls: 'ghost' }, { text: '儲存', cls: 'acc', click: async ({ bd }) => {
+        const o = formData(bd, fields);
+        if (N(o['金額']) <= 0) throw new Error('金額需大於 0');
+        o['案場名稱'] = (site(o['案場ID']) || {})['案場名稱'] || '';
+        if (!isNew) o['記錄ID'] = d['記錄ID'];
+        await saveRow('股東往來', o); toast('已儲存'); render();
+      } }]) });
+}
+
+/* =====================================================================
+   現金收支表
+   ===================================================================== */
+const CASHF = { from: '', to: '', scope: '全部', cat: '' };
+const BANKISH = ['匯款', '支票', '刷卡'];
+function inScope(method, scope) {
+  if (scope === '全部') return true;
+  if (scope === '現金') return method === '現金';
+  if (scope === '銀行') return BANKISH.indexOf(method) >= 0;
+  return true;
+}
+// 所有實際動到公司現金／銀行的收支
+function cashEntries() {
+  const out = [];
+  DB['收款紀錄'].filter(r => r['收款狀態'] === '已收' && r['收款日期'] && r['付款方式'] !== '股東代收').forEach(r => {
+    const c = DB['合約'].find(x => x['合約ID'] === r['合約ID']) || {};
+    out.push({ date: D10(r['收款日期']), cat: '工程收款', who: nameOfRow(r), desc: [r['期別'], c['合約說明']].filter(Boolean).join('｜'), method: r['付款方式'] || '未指定', amt: N(r['收款金額']), src: 'rcv', id: r['收款ID'] });
+  });
+  DB['支出'].filter(x => x['付款狀態'] === '已付' && x['付款日期'] && x['出帳方式'] !== '股東代墊').forEach(x => {
+    out.push({ date: D10(x['付款日期']), cat: '支出' + (x['類別'] ? '・' + x['類別'] : ''), who: nameOfRow(x), desc: [x['廠商名稱'] || x['請款人員'], x['品項說明']].filter(Boolean).join('｜'), method: x['出帳方式'] || '未指定', amt: -N(x['金額']), src: 'exp', id: x['記錄ID'] });
+  });
+  DB['薪資發放'].filter(p => p['發放狀態'] !== '未發放' && p['發放日期']).forEach(p => {
+    out.push({ date: D10(p['發放日期']), cat: '薪資', who: (p['工班'] ? p['工班'] + '工班 ' : '') + p['姓名'], desc: String(p['期間'] || ''), method: p['發放方式'] || '未指定', amt: -N(p['實發合計']), src: 'pay', id: p['發放ID'] });
+  });
+  DB['股東往來'].forEach(x => {
+    const t = SH_TYPES[x['類型']]; if (!t || !t.cash) return;
+    out.push({ date: D10(x['日期']), cat: '股東往來・' + x['類型'], who: x['股東'], desc: x['說明'] || '', method: x['方式'] || '未指定', amt: t.cash * N(x['金額']), src: 'sh', id: x['記錄ID'] });
+  });
+  return out.filter(e => e.date);
+}
+function cashOpening(scope) { try { return (JSON.parse(SET.CASH_OPENING || '{}') || {})[scope] || null; } catch (e) { return null; } }
+function pgCash(el) {
+  if (!CASHF.from) { CASHF.from = TODAY.slice(0, 8) + '01'; CASHF.to = ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)); }
+  const all = cashEntries().filter(e => inScope(e.method, CASHF.scope));
+  const op = cashOpening(CASHF.scope);
+  let open = null;
+  if (op) {
+    open = N(op.amt);
+    if (op.date <= CASHF.from) open += sum(all.filter(e => e.date >= op.date && e.date < CASHF.from), e => e.amt);
+    else open -= sum(all.filter(e => e.date >= CASHF.from && e.date < op.date), e => e.amt);
+  }
+  let rows = all.filter(e => e.date >= CASHF.from && e.date <= CASHF.to).sort((a, b) => a.date.localeCompare(b.date) || b.amt - a.amt);
+  const inc = rows.filter(e => e.amt > 0), exp = rows.filter(e => e.amt < 0);
+  const byCat = arr => { const m = {}; arr.forEach(e => m[e.cat] = (m[e.cat] || 0) + Math.abs(e.amt)); return Object.keys(m).sort((a, b) => m[b] - m[a]).map(k => [k, m[k]]); };
+  const byMethod = {}; rows.forEach(e => { const m = byMethod[e.method] || (byMethod[e.method] = { in: 0, out: 0 }); if (e.amt > 0) m.in += e.amt; else m.out -= e.amt; });
+  const shown = CASHF.cat ? rows.filter(e => e.cat === CASHF.cat) : rows;
+  let bal = open;
+  const net = sum(rows, e => e.amt);
+  const preset = (l, f, t) => `<button class="btn ghost sm" data-rng="${f}|${t}">${l}</button>`;
+  const thisM = TODAY.slice(0, 8) + '01', lastMEnd = addDays(thisM, -1), lastM = lastMEnd.slice(0, 8) + '01';
+  el.innerHTML = `<h1 class="pg">現金收支表<span class="sp"></span><button class="btn ghost" id="cashCsv">匯出 CSV</button></h1>
+    <div class="toolbar">
+      <label class="small muted">期間 <input type="date" id="cf" value="${CASHF.from}"></label><label class="small muted">至 <input type="date" id="ct" value="${CASHF.to}"></label>
+      ${preset('本月', thisM, ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)))}${preset('上月', lastM, lastMEnd)}${preset('今年', TODAY.slice(0, 4) + '-01-01', TODAY.slice(0, 4) + '-12-31')}
+      <div class="seg">${['全部', '現金', '銀行'].map(s => `<button data-scope="${s}" class="${CASHF.scope === s ? 'on' : ''}">${s}</button>`).join('')}</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi" style="cursor:default"><div class="l">期初餘額</div><div class="v">${open == null ? '—' : money(open)}</div><div class="s"><a href="#" id="setOpen">${op ? '修改期初（' + ymdFull(op.date) + ' ' + money(op.amt) + '）' : '設定期初餘額'}</a></div></div>
+      <div class="kpi ar" style="cursor:default"><div class="l">本期收入</div><div class="v">${money(sum(inc, e => e.amt))}</div><div class="s">${inc.length} 筆</div></div>
+      <div class="kpi ap" style="cursor:default"><div class="l">本期支出</div><div class="v">${money(-sum(exp, e => e.amt))}</div><div class="s">${exp.length} 筆</div></div>
+      <div class="kpi" style="cursor:default"><div class="l">期末餘額</div><div class="v ${net >= 0 ? 'ar' : 'ap'}">${open == null ? (net >= 0 ? '+' : '') + money(net) : money(open + net)}</div><div class="s">${open == null ? '本期淨現金流（未設期初）' : '淨現金流 ' + (net >= 0 ? '+' : '') + money(net)}</div></div>
+    </div>
+    <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+      <div><h2>收入分類</h2><div class="list">${byCat(inc).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto"><div>${esc(k)}</div><div class="amt ar">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
+      <div><h2>支出分類</h2><div class="list">${byCat(exp).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto"><div>${esc(k)}</div><div class="amt ap">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
+      <div><h2>收付方式</h2><div class="list">${Object.keys(byMethod).map(k => `<div class="row" style="grid-template-columns:1fr auto auto;gap:12px"><div>${esc(k)}</div><div class="amt ar">+${money(byMethod[k].in)}</div><div class="amt ap">−${money(byMethod[k].out)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
+    </div>
+    <h2>明細${CASHF.cat ? `　<span class="pill">${esc(CASHF.cat)}</span> <button class="btn ghost sm" id="clrCat">顯示全部</button>` : ''}<span class="sp"></span><span class="small muted">${shown.length} 筆</span></h2>
+    <div class="list"><div class="scroll"><table class="t"><thead><tr><th>日期</th><th>類別</th><th>對象／案場</th><th>說明</th><th>方式</th><th class="num">收入</th><th class="num">支出</th>${!CASHF.cat && open != null ? '<th class="num">餘額</th>' : ''}</tr></thead><tbody>
+      ${!CASHF.cat && open != null ? `<tr><td>${md(CASHF.from)}</td><td colspan="6" class="muted">期初餘額</td><td class="num"><b>${money(open)}</b></td></tr>` : ''}
+      ${shown.map(e => { if (bal != null) bal += e.amt; return `<tr data-src="${e.src}" data-sid="${esc(e.id)}" style="cursor:pointer"><td>${md(e.date)}</td><td class="small">${esc(e.cat)}</td><td>${esc(e.who)}</td><td class="small muted">${esc(e.desc)}</td><td class="small">${esc(e.method)}</td>
+        <td class="num ar">${e.amt > 0 ? money(e.amt) : ''}</td><td class="num ap">${e.amt < 0 ? money(-e.amt) : ''}</td>${!CASHF.cat && open != null ? `<td class="num">${money(bal)}</td>` : ''}</tr>`; }).join('') || '<tr><td colspan="8" class="empty">這段期間沒有收支</td></tr>'}
+    </tbody></table></div>
+    <div class="sumbar"><span>收入 <b class="ar">${money(sum(shown.filter(e => e.amt > 0), e => e.amt))}</b></span><span>支出 <b class="ap">${money(-sum(shown.filter(e => e.amt < 0), e => e.amt))}</b></span><span>淨額 <b>${money(sum(shown, e => e.amt))}</b></span>
+      <span class="muted">不含股東代墊／股東代收（未經公司帳戶）</span></div></div>`;
+  $('#cf').onchange = e => { CASHF.from = e.target.value; render(); };
+  $('#ct').onchange = e => { CASHF.to = e.target.value; render(); };
+  $$('[data-rng]', el).forEach(b => b.onclick = () => { [CASHF.from, CASHF.to] = b.dataset.rng.split('|'); render(); });
+  $$('[data-scope]', el).forEach(b => b.onclick = () => { CASHF.scope = b.dataset.scope; render(); });
+  $$('[data-cat]', el).forEach(r => r.onclick = () => { CASHF.cat = CASHF.cat === r.dataset.cat ? '' : r.dataset.cat; render(); });
+  if ($('#clrCat')) $('#clrCat').onclick = () => { CASHF.cat = ''; render(); };
+  $$('tr[data-src]', el).forEach(tr => tr.onclick = () => {
+    const id = tr.dataset.sid;
+    if (tr.dataset.src === 'rcv') editReceipt(DB['收款紀錄'].find(x => x['收款ID'] === id));
+    if (tr.dataset.src === 'exp') editExpense(DB['支出'].find(x => x['記錄ID'] === id));
+    if (tr.dataset.src === 'pay') editPayroll(DB['薪資發放'].find(x => x['發放ID'] === id));
+    if (tr.dataset.src === 'sh') editSh(DB['股東往來'].find(x => x['記錄ID'] === id));
+  });
+  $('#setOpen').onclick = e => {
+    e.preventDefault();
+    const f = [{ k: 'date', label: '期初日期（這天開始前的餘額）', type: 'date', def: op ? op.date : CASHF.from, req: true }, { k: 'amt', label: CASHF.scope + '餘額', type: 'number', def: op ? op.amt : '', req: true }];
+    dialog({ title: '設定期初餘額（' + CASHF.scope + '）', body: '<div class="small muted" style="margin-bottom:10px">輸入某一天開始前的實際餘額（例如盤點現金、銀行存摺餘額），之後各期的期初、期末會自動推算。「全部／現金／銀行」各自設定。</div>' + formHTML(f),
+      buttons: [{ text: '取消', cls: 'ghost' }, '|', { text: '儲存', cls: 'acc', click: async ({ bd }) => {
+        const o = formData(bd, f); let m = {}; try { m = JSON.parse(SET.CASH_OPENING || '{}') || {}; } catch (er) {}
+        m[CASHF.scope] = { date: o.date, amt: N(o.amt) };
+        const v = JSON.stringify(m); await api('save', { table: '設定', row: { key: 'CASH_OPENING', value: v } }); SET.CASH_OPENING = v; toast('已儲存'); render();
+      } }] });
+  };
+  $('#cashCsv').onclick = () => {
+    const lines = [['日期', '類別', '對象/案場', '說明', '方式', '收入', '支出']].concat(shown.map(e => [e.date, e.cat, e.who, e.desc, e.method, e.amt > 0 ? e.amt : '', e.amt < 0 ? -e.amt : '']));
+    const csv = '﻿' + lines.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '現金收支表_' + CASHF.scope + '_' + CASHF.from + '_' + CASHF.to + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  };
+}
+
+/* =====================================================================
    設定匯入
    ===================================================================== */
 function pgSet(el) {
@@ -1613,6 +1826,10 @@ function pgSet(el) {
     <div class="card"><form class="f" id="coForm" onsubmit="return false">
       ${[['CO_NAME', '公司名稱'], ['CO_TAXID', '統一編號'], ['CO_PHONE', '電話'], ['CO_ADDR', '地址'], ['BANK_NAME', '其他帳戶：銀行／分行'], ['BANK_ACCOUNT', '其他帳戶：帳號'], ['BANK_HOLDER', '其他帳戶：戶名']].map(([k, l]) => `<label${k === 'CO_ADDR' ? ' class="full"' : ''}>${l}<input name="${k}" value="${esc(coSet(k))}"></label>`).join('')}
     </form><div class="small muted" style="margin-top:8px">內建帳戶：${BANKS.map(b => esc(b.name) + ' ' + esc(b.account)).join('、')}；產生請款單時可選擇，並可勾選是否蓋統一發票專用章。</div><div style="margin-top:8px"><button class="btn sm" id="saveCo">儲存</button></div></div>
+
+    <h2>股東</h2>
+    <div class="card"><form class="f" onsubmit="return false"><label class="full">股東名單（以逗號分隔）<input id="shList" value="${esc(shareholders().join('，'))}"></label></form>
+      <div style="margin-top:8px"><button class="btn sm" id="saveSh">儲存</button></div></div>
 
     <h2>報價系統</h2>
     <div class="card"><form class="f" onsubmit="return false"><label class="full">報價系統 Apps Script 網址<input id="quoteUrl" value="${esc(SET.QUOTE_URL || '')}"></label></form>
@@ -1634,6 +1851,7 @@ function pgSet(el) {
   $$('[data-crew]', el).forEach(r => r.onclick = () => editCrew(DB['工班設定'].find(c => c['工班代號'] === r.dataset.crew)));
   $('#addCrew').onclick = () => editCrew(null);
   $('#saveCo').onclick = async () => { try { for (const i of $$('#coForm input')) { const v = i.value.trim(); if (v !== coSet(i.name)) { await api('save', { table: '設定', row: { key: i.name, value: v } }); SET[i.name] = v; } } toast('已儲存'); } catch (e) { toast(e.message, false); } };
+  $('#saveSh').onclick = async () => { const v = $('#shList').value.split(/[,，、]/).map(x => x.trim()).filter(Boolean).join(','); if (!v) return toast('至少要有一位股東', false); try { await api('save', { table: '設定', row: { key: 'SHAREHOLDERS', value: v } }); SET.SHAREHOLDERS = v; toast('已儲存'); } catch (e) { toast(e.message, false); } };
   $('#saveQuote').onclick = async () => { try { await api('save', { table: '設定', row: { key: 'QUOTE_URL', value: $('#quoteUrl').value.trim() } }); SET.QUOTE_URL = $('#quoteUrl').value.trim(); toast('已儲存'); } catch (e) { toast(e.message, false); } };
   $('#logout').onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch (e) {} logout(false); };
   $('#xlsFile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
