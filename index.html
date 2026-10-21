@@ -356,8 +356,8 @@ function jsonp(url, params) {
 /* =====================================================================
    資料
    ===================================================================== */
-const DB = { '零用金': [], '股東往來': [], '備忘': [], '案場': [], '合約': [], '收款紀錄': [], '支出': [], '人力費用': [], '薪資發放': [], '工班設定': [] };
-const IDK = { '零用金': '記錄ID', '股東往來': '記錄ID', '備忘': '備忘ID', '案場': '案場ID', '合約': '合約ID', '收款紀錄': '收款ID', '支出': '記錄ID', '人力費用': '記錄ID', '薪資發放': '發放ID', '工班設定': '工班代號' };
+const DB = { '收支簿': [], '零用金': [], '股東往來': [], '備忘': [], '案場': [], '合約': [], '收款紀錄': [], '支出': [], '人力費用': [], '薪資發放': [], '工班設定': [] };
+const IDK = { '收支簿': '記錄ID', '零用金': '記錄ID', '股東往來': '記錄ID', '備忘': '備忘ID', '案場': '案場ID', '合約': '合約ID', '收款紀錄': '收款ID', '支出': '記錄ID', '人力費用': '記錄ID', '薪資發放': '發放ID', '工班設定': '工班代號' };
 let SET = {};
 let CREWPAY = null, CREWPAY_ERR = '', CREWPAY_LOADING = false;
 
@@ -1736,153 +1736,178 @@ function editSh(x, preset = {}) {
 }
 
 /* =====================================================================
-   現金收支表
+   現金收支表（手動登記：現金＋多家銀行存摺）
    ===================================================================== */
-const CASHF = { from: '', to: '', scope: '全部', cat: '' };
-const BANKISH = ['匯款', '支票', '刷卡'];
-function inScope(method, scope) {
-  if (scope === '全部') return true;
-  if (scope === '現金') return method === '現金';
-  if (scope === '銀行') return BANKISH.indexOf(method) >= 0;
-  return true;
+const LEDGER_CATS_IN = ['工程收款', '股東存入', '退款', '利息', '其他收入'];
+const LEDGER_CATS_OUT = ['材料', '外包', '薪資', '代墊歸還', '機具租賃', '稅金', '租金', '手續費', '股東往來', '雜支', '其他支出'];
+const ACC_DEF = [
+  { id: 'cash', name: '現金', open: 0, openDate: '' },
+  { id: 'ctbc', name: '中國信託 東高雄分行 439540505034', open: 0, openDate: '' },
+  { id: 'sunny', name: '陽信銀行 屏東分行 05745-000082-1', open: 0, openDate: '' }
+];
+function accounts() { try { const a = JSON.parse(SET.CASH_ACCOUNTS || 'null'); if (Array.isArray(a) && a.length) return a; } catch (e) {} return ACC_DEF.map(x => Object.assign({}, x)); }
+const accName = id => (accounts().find(a => a.id === id) || {}).name || id || '（未指定）';
+async function saveAccounts(list) { const v = JSON.stringify(list); await api('save', { table: '設定', row: { key: 'CASH_ACCOUNTS', value: v } }); SET.CASH_ACCOUNTS = v; }
+// 一筆紀錄對某帳戶的影響
+function ledEffect(x, acc) {
+  const amt = N(x['金額']);
+  if (x['類型'] === '收入') return x['帳戶'] === acc ? amt : 0;
+  if (x['類型'] === '支出') return x['帳戶'] === acc ? -amt : 0;
+  if (x['類型'] === '轉帳') return (x['帳戶'] === acc ? -amt : 0) + (x['對方帳戶'] === acc ? amt : 0);
+  return 0;
 }
-// 所有實際動到公司現金／銀行的收支
-function cashEntries() {
-  const out = [];
-  DB['收款紀錄'].filter(r => r['收款狀態'] === '已收' && r['收款日期'] && r['付款方式'] !== '股東代收').forEach(r => {
-    const c = DB['合約'].find(x => x['合約ID'] === r['合約ID']) || {};
-    out.push({ date: D10(r['收款日期']), cat: '工程收款', who: nameOfRow(r), desc: [r['期別'], c['合約說明']].filter(Boolean).join('｜'), method: r['付款方式'] || '未指定', amt: N(r['收款金額']), src: 'rcv', id: r['收款ID'] });
-  });
-  DB['支出'].filter(x => x['付款狀態'] === '已付' && x['付款日期'] && x['出帳方式'] !== '股東代墊').forEach(x => {
-    out.push({ date: D10(x['付款日期']), cat: '支出' + (x['類別'] ? '・' + x['類別'] : ''), who: nameOfRow(x), desc: [x['廠商名稱'] || x['請款人員'], x['品項說明']].filter(Boolean).join('｜'), method: x['出帳方式'] || '未指定', amt: -N(x['金額']), src: 'exp', id: x['記錄ID'] });
-  });
-  DB['薪資發放'].filter(p => p['發放狀態'] !== '未發放' && p['發放日期']).forEach(p => {
-    out.push({ date: D10(p['發放日期']), cat: '薪資', who: (p['工班'] ? p['工班'] + '工班 ' : '') + p['姓名'], desc: String(p['期間'] || ''), method: p['發放方式'] || '未指定', amt: -N(p['實發合計']), src: 'pay', id: p['發放ID'] });
-  });
-  DB['股東往來'].forEach(x => {
-    const t = SH_TYPES[x['類型']]; if (!t || !t.cash) return;
-    out.push({ date: D10(x['日期']), cat: '股東往來・' + x['類型'], who: x['股東'], desc: x['說明'] || '', method: x['方式'] || '未指定', amt: t.cash * N(x['金額']), src: 'sh', id: x['記錄ID'] });
-  });
-  DB['零用金'].forEach(x => {
-    const t = MANUAL_TYPES[x['類型']]; if (!t) return;
-    const amt = N(x['金額']), base = { date: D10(x['日期']), cat: '手動・' + t.label, who: x['經手人'] || '', desc: x['說明'] || '', src: 'manual', id: x['記錄ID'] };
-    if (t.transfer) {   // 現金 ↔ 銀行 互轉：全部檢視中互相抵銷，不列
-      out.push(Object.assign({}, base, { method: '現金', amt: t.cash * amt, transfer: true }));
-      out.push(Object.assign({}, base, { method: '匯款', amt: -t.cash * amt, transfer: true }));
-    } else out.push(Object.assign({}, base, { method: x['方式'] || '現金', amt: t.sign * amt }));
-  });
-  return out.filter(e => e.date);
+// 某帳戶在某日「開始前」的餘額；未設期初日的帳戶從 0 起算全部紀錄
+function accBalBefore(a, date) {
+  const rows = DB['收支簿'];
+  const od = a.openDate || '';
+  let b = N(a.open);
+  if (!od || od <= date) rows.forEach(x => { const d = D10(x['日期']); if (d >= od && d < date) b += ledEffect(x, a.id); });
+  else rows.forEach(x => { const d = D10(x['日期']); if (d >= date && d < od) b -= ledEffect(x, a.id); });
+  return b;
 }
-// 手動收支類型（存在「零用金」分頁）
-const MANUAL_TYPES = {
-  '其他收入': { label: '其他收入', sign: 1, dir: 1 },
-  '其他支出': { label: '其他支出', sign: -1, dir: -1 },
-  '提領現金': { label: '提領現金', transfer: true, cash: 1, dir: 1 },
-  '存入銀行': { label: '存入銀行', transfer: true, cash: -1, dir: -1 },
-  '零用金撥補': { label: '提領現金', transfer: true, cash: 1, dir: 1 },
-  '繳回銀行': { label: '存入銀行', transfer: true, cash: -1, dir: -1 }
-};
-function editManual(x, dir) {
+const LEDF = { from: '', to: '', acc: '', cat: '', q: '' };
+function pgCash(el) {
+  if (!LEDF.from) { LEDF.from = TODAY.slice(0, 8) + '01'; LEDF.to = ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)); }
+  const accs = accounts();
+  if (LEDF.acc && !accs.find(a => a.id === LEDF.acc)) LEDF.acc = '';
+  const scope = LEDF.acc ? accs.filter(a => a.id === LEDF.acc) : accs;
+  const eff = x => sum(scope, a => ledEffect(x, a.id));
+  const nextDay = addDays(LEDF.to, 1);
+  const openBal = sum(scope, a => accBalBefore(a, LEDF.from));
+  const endBal = sum(scope, a => accBalBefore(a, nextDay));
+  let rows = DB['收支簿'].filter(x => { const d = D10(x['日期']); return d >= LEDF.from && d <= LEDF.to; })
+    .filter(x => !LEDF.acc || x['帳戶'] === LEDF.acc || x['對方帳戶'] === LEDF.acc)
+    .sort((a, b) => D10(a['日期']).localeCompare(D10(b['日期'])) || String(a['建立時間']).localeCompare(String(b['建立時間'])));
+  const inR = rows.filter(x => eff(x) > 0), outR = rows.filter(x => eff(x) < 0);
+  let shown = rows;
+  if (LEDF.cat) shown = shown.filter(x => (x['類別'] || '未分類') === LEDF.cat);
+  if (LEDF.q) { const q = LEDF.q.toLowerCase(); shown = shown.filter(x => ['對象', '說明', '類別', '經手人', '案場名稱'].some(k => String(x[k] || '').toLowerCase().indexOf(q) >= 0)); }
+  const filtered = LEDF.cat || LEDF.q;
+  const byCat = arr => { const m = {}; arr.forEach(x => { const k = x['類別'] || '未分類'; m[k] = (m[k] || 0) + Math.abs(eff(x)); }); return Object.keys(m).sort((a, b) => m[b] - m[a]).map(k => [k, m[k]]); };
+  const thisM = TODAY.slice(0, 8) + '01', lastMEnd = addDays(thisM, -1), lastM = lastMEnd.slice(0, 8) + '01';
+  const preset = (l, f, t) => `<button class="btn ghost sm" data-rng="${f}|${t}">${l}</button>`;
+  const nowBal = a => accBalBefore(a, addDays(TODAY, 1));
+  let bal = openBal;
+  el.innerHTML = `<h1 class="pg">現金收支表<span class="sp"></span><button class="btn ghost" id="accMg">帳戶管理</button><button class="btn ghost" id="ledCsv">匯出 CSV</button>
+      <button class="btn okb" id="ledIn">＋ 收入</button><button class="btn acc" id="ledOut">− 支出</button><button class="btn" id="ledTr">⇄ 轉帳</button></h1>
+    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="kpi" data-acc="" style="${!LEDF.acc ? 'outline:2px solid var(--ink)' : ''}"><div class="l">全部帳戶</div><div class="v">${money(sum(accs, nowBal))}</div><div class="s">目前餘額合計</div></div>
+      ${accs.map(a => `<div class="kpi" data-acc="${esc(a.id)}" style="${LEDF.acc === a.id ? 'outline:2px solid var(--ink)' : ''}"><div class="l">${esc(a.name)}</div><div class="v ${nowBal(a) < 0 ? 'ap' : ''}">${money(nowBal(a))}</div><div class="s">${a.openDate ? '期初 ' + ymdFull(a.openDate) + ' ' + money(a.open) : (N(a.open) ? '期初 ' + money(a.open) : '未設期初')}</div></div>`).join('')}
+    </div>
+    <div class="toolbar">
+      <label class="small muted">期間 <input type="date" id="lf" value="${LEDF.from}"></label><label class="small muted">至 <input type="date" id="lt" value="${LEDF.to}"></label>
+      ${preset('本月', thisM, ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)))}${preset('上月', lastM, lastMEnd)}${preset('今年', TODAY.slice(0, 4) + '-01-01', TODAY.slice(0, 4) + '-12-31')}
+      <select id="lAcc"><option value="">全部帳戶</option>${accs.map(a => `<option value="${esc(a.id)}"${LEDF.acc === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+      <input type="search" id="lQ" placeholder="搜尋對象、說明…" value="${esc(LEDF.q)}">
+    </div>
+    <div class="kpis">
+      <div class="kpi" style="cursor:default"><div class="l">期初餘額</div><div class="v">${money(openBal)}</div><div class="s">${md(LEDF.from)} 開始前</div></div>
+      <div class="kpi ar" style="cursor:default"><div class="l">本期收入</div><div class="v">${money(sum(inR, eff))}</div><div class="s">${inR.length} 筆</div></div>
+      <div class="kpi ap" style="cursor:default"><div class="l">本期支出</div><div class="v">${money(-sum(outR, eff))}</div><div class="s">${outR.length} 筆</div></div>
+      <div class="kpi" style="cursor:default"><div class="l">期末餘額</div><div class="v ${endBal < 0 ? 'ap' : ''}">${money(endBal)}</div><div class="s">淨額 ${endBal - openBal >= 0 ? '+' : ''}${money(endBal - openBal)}</div></div>
+    </div>
+    ${rows.length ? `<div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+      <div><h2>收入分類</h2><div class="list">${byCat(inR).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto${LEDF.cat === k ? ';background:var(--soft)' : ''}"><div>${esc(k)}</div><div class="amt ar">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
+      <div><h2>支出分類</h2><div class="list">${byCat(outR).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto${LEDF.cat === k ? ';background:var(--soft)' : ''}"><div>${esc(k)}</div><div class="amt ap">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
+    </div>` : ''}
+    <h2>明細${LEDF.cat ? `　<span class="pill">${esc(LEDF.cat)}</span> <button class="btn ghost sm" id="clrCat">顯示全部</button>` : ''}<span class="sp"></span><span class="small muted">${shown.length} 筆</span></h2>
+    <div class="list"><div class="scroll"><table class="t"><thead><tr><th>日期</th><th>帳戶</th><th>類別</th><th>對象</th><th>說明</th><th class="num">收入</th><th class="num">支出</th>${filtered ? '' : '<th class="num">餘額</th>'}</tr></thead><tbody>
+      ${filtered ? '' : `<tr><td>${md(LEDF.from)}</td><td colspan="6" class="muted">期初餘額${LEDF.acc ? '（' + esc(accName(LEDF.acc)) + '）' : '（全部帳戶）'}</td><td class="num"><b>${money(openBal)}</b></td></tr>`}
+      ${shown.map(x => {
+        const e = eff(x); if (!filtered) bal += e;
+        const tr = x['類型'] === '轉帳';
+        const accTxt = tr ? esc(accName(x['帳戶'])) + ' → ' + esc(accName(x['對方帳戶'])) : esc(accName(x['帳戶']));
+        const inAmt = tr ? (LEDF.acc && e > 0 ? money(e) : '') : (e > 0 ? money(e) : '');
+        const outAmt = tr ? (LEDF.acc && e < 0 ? money(-e) : '') : (e < 0 ? money(-e) : '');
+        return `<tr data-lid="${esc(x['記錄ID'])}" style="cursor:pointer"><td>${md(x['日期'])}</td><td class="small">${accTxt}</td><td class="small">${tr ? '<span class="pill">轉帳</span> ' + money(x['金額']) : esc(x['類別'] || '')}</td><td>${esc([x['對象'], x['案場名稱']].filter(Boolean).join('｜'))}</td><td class="small muted">${esc(x['說明'] || '')}${x['經手人'] ? '（' + esc(x['經手人']) + '）' : ''}</td>
+          <td class="num ar">${inAmt}</td><td class="num ap">${outAmt}</td>${filtered ? '' : `<td class="num">${money(bal)}</td>`}</tr>`;
+      }).join('') || `<tr><td colspan="8"><div class="empty">${DB['收支簿'].length ? '這段期間沒有收支' : '尚未登記任何收支。先到「帳戶管理」設定各帳戶的期初餘額，再用右上「＋ 收入／− 支出／⇄ 轉帳」登記。'}</div></td></tr>`}
+    </tbody></table></div>
+    <div class="sumbar"><span>收入 <b class="ar">${money(sum(shown.filter(x => eff(x) > 0), eff))}</b></span><span>支出 <b class="ap">${money(-sum(shown.filter(x => eff(x) < 0), eff))}</b></span>${LEDF.acc ? '' : '<span class="muted">全部帳戶檢視中，帳戶間轉帳不計收支</span>'}</div></div>`;
+  $('#lf').onchange = e => { LEDF.from = e.target.value; render(); };
+  $('#lt').onchange = e => { LEDF.to = e.target.value; render(); };
+  $$('[data-rng]', el).forEach(b => b.onclick = () => { [LEDF.from, LEDF.to] = b.dataset.rng.split('|'); render(); });
+  $('#lAcc').onchange = e => { LEDF.acc = e.target.value; render(); };
+  $$('[data-acc]', el).forEach(k => k.onclick = () => { LEDF.acc = k.dataset.acc; render(); });
+  $$('[data-cat]', el).forEach(r => r.onclick = () => { LEDF.cat = LEDF.cat === r.dataset.cat ? '' : r.dataset.cat; render(); });
+  if ($('#clrCat')) $('#clrCat').onclick = () => { LEDF.cat = ''; render(); };
+  let qt; $('#lQ').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { LEDF.q = e.target.value.trim(); render(); const q = $('#lQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 350); };
+  $$('tr[data-lid]', el).forEach(tr => tr.onclick = () => editLedger(DB['收支簿'].find(x => x['記錄ID'] === tr.dataset.lid)));
+  $('#ledIn').onclick = () => editLedger(null, '收入');
+  $('#ledOut').onclick = () => editLedger(null, '支出');
+  $('#ledTr').onclick = () => editLedger(null, '轉帳');
+  $('#accMg').onclick = manageAccounts;
+  $('#ledCsv').onclick = () => {
+    const lines = [['日期', '類型', '帳戶', '轉入帳戶', '類別', '對象', '案場', '說明', '經手人', '收入', '支出']].concat(shown.map(x => { const e = eff(x); return [D10(x['日期']), x['類型'], accName(x['帳戶']), x['類型'] === '轉帳' ? accName(x['對方帳戶']) : '', x['類別'] || '', x['對象'] || '', x['案場名稱'] || '', x['說明'] || '', x['經手人'] || '', e > 0 ? e : '', e < 0 ? -e : '']; }));
+    const csv = '﻿' + lines.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '現金收支表_' + (LEDF.acc ? accName(LEDF.acc) : '全部') + '_' + LEDF.from + '_' + LEDF.to + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  };
+}
+function editLedger(x, kind) {
   const isNew = !x;
-  const d = Object.assign({ '日期': TODAY, '類型': dir < 0 ? '其他支出' : '其他收入', '方式': CASHF.scope === '銀行' ? '匯款' : '現金', '經手人': shareholders()[0] || '' }, x || {});
-  const want = isNew ? dir : (MANUAL_TYPES[d['類型']] || {}).dir;
-  const types = Object.keys(MANUAL_TYPES).filter(k => ['零用金撥補', '繳回銀行'].indexOf(k) < 0 || k === d['類型']).filter(k => !want || MANUAL_TYPES[k].dir === want);
-  const tl = { '其他收入': '其他收入（例：退款、利息、雜項收入）', '其他支出': '其他支出（例：雜支、手續費、零星採購）', '提領現金': '提領現金（從銀行領出，現金增加、銀行減少）', '存入銀行': '存入銀行（現金存回銀行，現金減少、銀行增加）', '零用金撥補': '提領現金', '繳回銀行': '存入銀行' };
-  const fields = [
+  const accs = accounts();
+  const type = isNew ? kind : x['類型'];
+  const defAcc = LEDF.acc || (accs[0] || {}).id;
+  const d = Object.assign({ '日期': TODAY, '帳戶': type === '轉帳' ? 'ctbc' : defAcc, '對方帳戶': 'cash', '經手人': '' }, x || {});
+  if (type === '轉帳' && isNew && d['帳戶'] === d['對方帳戶']) d['對方帳戶'] = (accs.find(a => a.id !== d['帳戶']) || {}).id;
+  const accOpts = accs.map(a => ({ v: a.id, l: a.name }));
+  const used = [...new Set(DB['收支簿'].filter(r => r['類型'] === type).map(r => r['類別']).filter(Boolean))];
+  const cats = [...new Set(used.concat(type === '收入' ? LEDGER_CATS_IN : LEDGER_CATS_OUT))];
+  const people = [...new Set(DB['收支簿'].map(r => r['對象']).filter(Boolean))].slice(0, 200);
+  const fields = type === '轉帳' ? [
     { k: '日期', label: '日期', type: 'date', req: true },
-    { k: '類型', label: '類型', type: 'select', options: types.map(k => ({ v: k, l: tl[k] })), full: true },
     { k: '金額', label: '金額', type: 'number', req: true },
-    { k: '方式', label: '收付方式', type: 'select', options: ['現金', '匯款', '支票', '刷卡'] },
+    { k: '帳戶', label: '從（轉出）', type: 'select', options: accOpts, req: true },
+    { k: '對方帳戶', label: '到（轉入）', type: 'select', options: accOpts, req: true },
+    { k: '經手人', label: '經手人' },
+    { k: '說明', label: '說明', type: 'textarea', ph: '例：中信提領現金、現金存入陽信' }
+  ] : [
+    { k: '日期', label: '日期', type: 'date', req: true },
+    { k: '帳戶', label: type === '收入' ? '存入帳戶' : '付款帳戶', type: 'select', options: accOpts, req: true },
+    { k: '金額', label: '金額', type: 'number', req: true },
+    { k: '類別', label: '類別', list: cats },
+    { k: '對象', label: type === '收入' ? '付款人' : '收款人／廠商', list: people },
+    { k: '案場ID', label: '相關案場（選填）', type: 'select', options: siteOptions(d['案場ID'], { blankText: '（無）' }) },
     { k: '經手人', label: '經手人' },
     { k: '說明', label: '說明', type: 'textarea' }
   ];
-  dialog({ title: isNew ? (dir < 0 ? '登記減少' : '登記增加') : '編輯手動收支', body: formHTML(fields, d),
-    onOpen: ({ bd }) => { const sync = () => $('[data-k=方式]', bd).classList.toggle('hide', !!(MANUAL_TYPES[$('[name=類型]', bd).value] || {}).transfer); $('[name=類型]', bd).onchange = sync; sync(); },
-    buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('刪除這筆手動收支？', '刪除', 'danger')) return false; await removeRows('零用金', [d['記錄ID']]); toast('已刪除'); render(); } }])
+  const title = { '收入': '登記收入', '支出': '登記支出', '轉帳': '帳戶轉帳' }[type];
+  dialog({ title: isNew ? title : '編輯' + type, body: formHTML(fields, d),
+    buttons: (isNew ? [] : [{ text: '刪除', cls: 'danger', click: async () => { if (!await confirmBox('刪除這筆收支？', '刪除', 'danger')) return false; await removeRows('收支簿', [d['記錄ID']]); toast('已刪除'); render(); } },
+      { text: '複製一筆', cls: 'ghost', click: () => { const c = Object.assign({}, d); delete c['記錄ID']; delete c['建立時間']; c['日期'] = TODAY; setTimeout(() => editLedger(Object.assign(c, { _copy: 1 }), type), 40); } }])
       .concat(['|', { text: '取消', cls: 'ghost' }, { text: '儲存', cls: 'acc', click: async ({ bd }) => {
         const o = formData(bd, fields);
         if (N(o['金額']) <= 0) throw new Error('金額需大於 0');
-        if ((MANUAL_TYPES[o['類型']] || {}).transfer) o['方式'] = '';
-        if (!isNew) o['記錄ID'] = d['記錄ID'];
-        await saveRow('零用金', o); toast('已儲存'); render();
+        if (type === '轉帳' && o['帳戶'] === o['對方帳戶']) throw new Error('轉出和轉入不能是同一個帳戶');
+        o['類型'] = type;
+        if (type !== '轉帳') { o['對方帳戶'] = ''; o['案場名稱'] = (site(o['案場ID']) || {})['案場名稱'] || ''; }
+        if (!isNew && !d._copy) o['記錄ID'] = d['記錄ID'];
+        await saveRow('收支簿', o); toast('已儲存'); render();
       } }]) });
 }
-function cashOpening(scope) { try { return (JSON.parse(SET.CASH_OPENING || '{}') || {})[scope] || null; } catch (e) { return null; } }
-function pgCash(el) {
-  if (!CASHF.from) { CASHF.from = TODAY.slice(0, 8) + '01'; CASHF.to = ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)); }
-  const all = cashEntries().filter(e => inScope(e.method, CASHF.scope) && !(e.transfer && CASHF.scope === '全部'));
-  const op = cashOpening(CASHF.scope);
-  let open = null;
-  if (op) {
-    open = N(op.amt);
-    if (op.date <= CASHF.from) open += sum(all.filter(e => e.date >= op.date && e.date < CASHF.from), e => e.amt);
-    else open -= sum(all.filter(e => e.date >= CASHF.from && e.date < op.date), e => e.amt);
-  }
-  let rows = all.filter(e => e.date >= CASHF.from && e.date <= CASHF.to).sort((a, b) => a.date.localeCompare(b.date) || b.amt - a.amt);
-  const inc = rows.filter(e => e.amt > 0), exp = rows.filter(e => e.amt < 0);
-  const byCat = arr => { const m = {}; arr.forEach(e => m[e.cat] = (m[e.cat] || 0) + Math.abs(e.amt)); return Object.keys(m).sort((a, b) => m[b] - m[a]).map(k => [k, m[k]]); };
-  const byMethod = {}; rows.forEach(e => { const m = byMethod[e.method] || (byMethod[e.method] = { in: 0, out: 0 }); if (e.amt > 0) m.in += e.amt; else m.out -= e.amt; });
-  const shown = CASHF.cat ? rows.filter(e => e.cat === CASHF.cat) : rows;
-  let bal = open;
-  const net = sum(rows, e => e.amt);
-  const preset = (l, f, t) => `<button class="btn ghost sm" data-rng="${f}|${t}">${l}</button>`;
-  const thisM = TODAY.slice(0, 8) + '01', lastMEnd = addDays(thisM, -1), lastM = lastMEnd.slice(0, 8) + '01';
-  el.innerHTML = `<h1 class="pg">現金收支表<span class="sp"></span><button class="btn ghost" id="cashCsv">匯出 CSV</button><button class="btn okb" id="manAdd">＋ 增加</button><button class="btn acc" id="manSub">− 減少</button></h1>
-    <div class="toolbar">
-      <label class="small muted">期間 <input type="date" id="cf" value="${CASHF.from}"></label><label class="small muted">至 <input type="date" id="ct" value="${CASHF.to}"></label>
-      ${preset('本月', thisM, ymd(new Date(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), 0)))}${preset('上月', lastM, lastMEnd)}${preset('今年', TODAY.slice(0, 4) + '-01-01', TODAY.slice(0, 4) + '-12-31')}
-      <div class="seg">${['全部', '現金', '銀行'].map(s => `<button data-scope="${s}" class="${CASHF.scope === s ? 'on' : ''}">${s}</button>`).join('')}</div>
-    </div>
-    <div class="kpis">
-      <div class="kpi" style="cursor:default"><div class="l">期初餘額</div><div class="v">${open == null ? '—' : money(open)}</div><div class="s"><a href="#" id="setOpen">${op ? '修改期初（' + ymdFull(op.date) + ' ' + money(op.amt) + '）' : '設定期初餘額'}</a></div></div>
-      <div class="kpi ar" style="cursor:default"><div class="l">本期收入</div><div class="v">${money(sum(inc, e => e.amt))}</div><div class="s">${inc.length} 筆</div></div>
-      <div class="kpi ap" style="cursor:default"><div class="l">本期支出</div><div class="v">${money(-sum(exp, e => e.amt))}</div><div class="s">${exp.length} 筆</div></div>
-      <div class="kpi" style="cursor:default"><div class="l">期末餘額</div><div class="v ${net >= 0 ? 'ar' : 'ap'}">${open == null ? (net >= 0 ? '+' : '') + money(net) : money(open + net)}</div><div class="s">${open == null ? '本期淨現金流（未設期初）' : '淨現金流 ' + (net >= 0 ? '+' : '') + money(net)}</div></div>
-    </div>
-    <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
-      <div><h2>收入分類</h2><div class="list">${byCat(inc).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto"><div>${esc(k)}</div><div class="amt ar">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
-      <div><h2>支出分類</h2><div class="list">${byCat(exp).map(([k, v]) => `<div class="row click" data-cat="${esc(k)}" style="grid-template-columns:1fr auto"><div>${esc(k)}</div><div class="amt ap">${money(v)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
-      <div><h2>收付方式</h2><div class="list">${Object.keys(byMethod).map(k => `<div class="row" style="grid-template-columns:1fr auto auto;gap:12px"><div>${esc(k)}</div><div class="amt ar">+${money(byMethod[k].in)}</div><div class="amt ap">−${money(byMethod[k].out)}</div></div>`).join('') || '<div class="empty">無</div>'}</div></div>
-    </div>
-    <h2>明細${CASHF.cat ? `　<span class="pill">${esc(CASHF.cat)}</span> <button class="btn ghost sm" id="clrCat">顯示全部</button>` : ''}<span class="sp"></span><span class="small muted">${shown.length} 筆</span></h2>
-    <div class="list"><div class="scroll"><table class="t"><thead><tr><th>日期</th><th>類別</th><th>對象／案場</th><th>說明</th><th>方式</th><th class="num">收入</th><th class="num">支出</th>${!CASHF.cat && open != null ? '<th class="num">餘額</th>' : ''}</tr></thead><tbody>
-      ${!CASHF.cat && open != null ? `<tr><td>${md(CASHF.from)}</td><td colspan="6" class="muted">期初餘額</td><td class="num"><b>${money(open)}</b></td></tr>` : ''}
-      ${shown.map(e => { if (bal != null) bal += e.amt; return `<tr data-src="${e.src}" data-sid="${esc(e.id)}" style="cursor:pointer"><td>${md(e.date)}</td><td class="small">${esc(e.cat)}</td><td>${esc(e.who)}</td><td class="small muted">${esc(e.desc)}</td><td class="small">${esc(e.method)}</td>
-        <td class="num ar">${e.amt > 0 ? money(e.amt) : ''}</td><td class="num ap">${e.amt < 0 ? money(-e.amt) : ''}</td>${!CASHF.cat && open != null ? `<td class="num">${money(bal)}</td>` : ''}</tr>`; }).join('') || '<tr><td colspan="8" class="empty">這段期間沒有收支</td></tr>'}
-    </tbody></table></div>
-    <div class="sumbar"><span>收入 <b class="ar">${money(sum(shown.filter(e => e.amt > 0), e => e.amt))}</b></span><span>支出 <b class="ap">${money(-sum(shown.filter(e => e.amt < 0), e => e.amt))}</b></span><span>淨額 <b>${money(sum(shown, e => e.amt))}</b></span>
-      <span class="muted">不含股東代墊／股東代收（未經公司帳戶）；手動收支用右上「＋ 增加／− 減少」登記</span></div></div>`;
-  $('#cf').onchange = e => { CASHF.from = e.target.value; render(); };
-  $('#ct').onchange = e => { CASHF.to = e.target.value; render(); };
-  $$('[data-rng]', el).forEach(b => b.onclick = () => { [CASHF.from, CASHF.to] = b.dataset.rng.split('|'); render(); });
-  $$('[data-scope]', el).forEach(b => b.onclick = () => { CASHF.scope = b.dataset.scope; render(); });
-  $$('[data-cat]', el).forEach(r => r.onclick = () => { CASHF.cat = CASHF.cat === r.dataset.cat ? '' : r.dataset.cat; render(); });
-  if ($('#clrCat')) $('#clrCat').onclick = () => { CASHF.cat = ''; render(); };
-  $$('tr[data-src]', el).forEach(tr => tr.onclick = () => {
-    const id = tr.dataset.sid;
-    if (tr.dataset.src === 'rcv') editReceipt(DB['收款紀錄'].find(x => x['收款ID'] === id));
-    if (tr.dataset.src === 'exp') editExpense(DB['支出'].find(x => x['記錄ID'] === id));
-    if (tr.dataset.src === 'pay') editPayroll(DB['薪資發放'].find(x => x['發放ID'] === id));
-    if (tr.dataset.src === 'sh') editSh(DB['股東往來'].find(x => x['記錄ID'] === id));
-    if (tr.dataset.src === 'manual') editManual(DB['零用金'].find(x => x['記錄ID'] === id));
-  });
-  $('#manAdd').onclick = () => editManual(null, 1);
-  $('#manSub').onclick = () => editManual(null, -1);
-  $('#setOpen').onclick = e => {
-    e.preventDefault();
-    const f = [{ k: 'date', label: '期初日期（這天開始前的餘額）', type: 'date', def: op ? op.date : CASHF.from, req: true }, { k: 'amt', label: CASHF.scope + '餘額', type: 'number', def: op ? op.amt : '', req: true }];
-    dialog({ title: '設定期初餘額（' + CASHF.scope + '）', body: '<div class="small muted" style="margin-bottom:10px">輸入某一天開始前的實際餘額（例如盤點現金、銀行存摺餘額），之後各期的期初、期末會自動推算。「全部／現金／銀行」各自設定。</div>' + formHTML(f),
-      buttons: [{ text: '取消', cls: 'ghost' }, '|', { text: '儲存', cls: 'acc', click: async ({ bd }) => {
-        const o = formData(bd, f); let m = {}; try { m = JSON.parse(SET.CASH_OPENING || '{}') || {}; } catch (er) {}
-        m[CASHF.scope] = { date: o.date, amt: N(o.amt) };
-        const v = JSON.stringify(m); await api('save', { table: '設定', row: { key: 'CASH_OPENING', value: v } }); SET.CASH_OPENING = v; toast('已儲存'); render();
-      } }] });
+function manageAccounts() {
+  let list = accounts().map(a => Object.assign({}, a));
+  const usedN = id => DB['收支簿'].filter(x => x['帳戶'] === id || x['對方帳戶'] === id).length;
+  const inp = 'border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--paper);min-width:0;width:100%';
+  const dl = dialog({ title: '帳戶管理', wide: true, body: '<div id="accl"></div>', buttons: [{ text: '取消', cls: 'ghost' }, '|', { text: '儲存', cls: 'acc', click: async ({ bd }) => {
+    read(bd);
+    if (!list.length) throw new Error('至少要有一個帳戶');
+    if (list.some(a => !a.name)) throw new Error('帳戶名稱不能空白');
+    await saveAccounts(list); toast('已儲存帳戶'); render();
+  } }] });
+  const read = bd => $$('[data-ai]', bd).forEach(r => { const a = list[Number(r.dataset.ai)]; a.name = $('[data-f=name]', r).value.trim(); a.openDate = $('[data-f=openDate]', r).value; a.open = N($('[data-f=open]', r).value); });
+  const draw = () => {
+    $('#accl', dl.bd).innerHTML = `<div class="scroll"><table class="t"><thead><tr><th>帳戶名稱（銀行、分行、帳號）</th><th>期初日期</th><th class="num">期初餘額</th><th></th></tr></thead><tbody>
+      ${list.map((a, i) => `<tr data-ai="${i}"><td><input data-f="name" value="${esc(a.name)}" style="${inp};min-width:220px"></td><td><input type="date" data-f="openDate" value="${esc(a.openDate || '')}" style="${inp}"></td>
+        <td><input type="number" data-f="open" value="${N(a.open) || ''}" placeholder="0" style="${inp};text-align:right;width:130px"></td>
+        <td>${usedN(a.id) ? `<span class="tiny muted">${usedN(a.id)} 筆</span>` : `<button class="btn sm ghost" data-arm="${i}">移除</button>`}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div style="margin-top:10px"><button class="btn" id="accAdd">＋ 新增帳戶（存摺）</button></div>
+      <div class="small muted" style="margin-top:8px">期初日期＋期初餘額＝那天開始前的實際餘額（盤點現金、存摺餘額）。之後各期間的期初、期末都會自動推算。已有紀錄的帳戶不能移除。</div>`;
+    $$('[data-arm]', dl.bd).forEach(b => b.onclick = () => { read(dl.bd); list.splice(Number(b.dataset.arm), 1); draw(); });
+    $('#accAdd', dl.bd).onclick = () => { read(dl.bd); list.push({ id: 'a' + Date.now().toString(36), name: '', open: 0, openDate: '' }); draw(); const ins = $$('[data-f=name]', dl.bd); ins[ins.length - 1].focus(); };
   };
-  $('#cashCsv').onclick = () => {
-    const lines = [['日期', '類別', '對象/案場', '說明', '方式', '收入', '支出']].concat(shown.map(e => [e.date, e.cat, e.who, e.desc, e.method, e.amt > 0 ? e.amt : '', e.amt < 0 ? -e.amt : '']));
-    const csv = '﻿' + lines.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '現金收支表_' + CASHF.scope + '_' + CASHF.from + '_' + CASHF.to + '.csv'; document.body.appendChild(a); a.click(); a.remove();
-  };
+  draw();
 }
 
 /* =====================================================================
