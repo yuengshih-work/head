@@ -227,6 +227,8 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .bill .r-sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:auto;padding-top:14px}
 .bill .r-pg{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:11px;color:#9aa1a8}
 .billzoom .bill+.bill{margin-top:16px}
+.billov.editable [contenteditable]{outline:none;border-radius:3px;cursor:text}.billov.editable [contenteditable]:hover{box-shadow:0 0 0 1px #d2532a66}.billov.editable [contenteditable]:focus{box-shadow:0 0 0 2px #d2532a;background:#fff8f3}
+@media print{.billov.editable [contenteditable]{box-shadow:none!important;background:none!important}}
 @media print{.bill.rpt{break-after:page;page-break-after:always;height:297mm;min-height:0;padding:16mm 15mm;overflow:hidden}.bill.rpt:last-child{break-after:auto;page-break-after:auto}.billzoom .bill+.bill{margin-top:0}}
 @media print{
   @page{size:A4;margin:0}
@@ -2238,14 +2240,15 @@ function billHTML(o) {
     </div>
   </div>`;
 }
-function showBill(html, after) {
-  const ov = document.createElement('div'); ov.className = 'billov';
-  ov.innerHTML = `<div class="billbar"><b>請款單預覽</b><span style="flex:1"></span><span class="small" style="opacity:.75">列印時選「另存為 PDF」即可存檔</span><button class="btn acc" data-p>列印／存 PDF</button><button class="btn ghost" data-x style="color:inherit;border-color:currentColor">關閉</button></div><div class="billscroll"><div class="billzoom">${html}</div></div>`;
+function showBill(html, after, opt = {}) {
+  const ov = document.createElement('div'); ov.className = 'billov' + (opt.editable ? ' editable' : '');
+  ov.innerHTML = `<div class="billbar"><b>${esc(opt.title || '請款單預覽')}</b>${opt.onEdit ? '<button class="btn ghost" data-e style="color:inherit;border-color:currentColor">✎ 返回編輯（照片／分類／順序）</button>' : ''}<span style="flex:1"></span><span class="small" style="opacity:.75">${opt.editable ? '文字可直接點選修改；' : ''}列印時選「另存為 PDF」即可存檔</span><button class="btn acc" data-p>列印／存 PDF</button><button class="btn ghost" data-x style="color:inherit;border-color:currentColor">關閉</button></div><div class="billscroll"><div class="billzoom">${html}</div></div>`;
   document.body.appendChild(ov); document.body.classList.add('printing-bill');
   const fit = () => { const z = Math.min(1, (ov.clientWidth - 24) / 794); $('.billzoom', ov).style.zoom = z; };
   fit(); window.addEventListener('resize', fit);
   const close = () => { ov.remove(); document.body.classList.remove('printing-bill'); window.removeEventListener('resize', fit); if (after) after(); };
   $('[data-x]', ov).onclick = close;
+  if (opt.onEdit) $('[data-e]', ov).onclick = () => { const ed = opt.onEdit; ov.remove(); document.body.classList.remove('printing-bill'); window.removeEventListener('resize', fit); ed(ov); };
   $('[data-p]', ov).onclick = () => { $('.billzoom', ov).style.zoom = 1; try { window.print(); } catch (e) {} setTimeout(fit, 300); };
 }
 
@@ -2272,11 +2275,15 @@ function rptResize(file, max = 1400) {
     fr.readAsDataURL(file);
   });
 }
-function reportDialog(cid, after) {
+function reportDialog(cid, after, st) {
   const c = DB['合約'].find(x => x['合約ID'] === cid); if (!c) return;
   const s = site(c['案場ID']) || {};
-  const PH = [];   // { id, name, path, src, sec, cap, on }
-  const fkey = 'RPT_FOLDER_' + cid;
+  const fkey = 'RPT_FOLDER_' + cid, skey = 'RPT_STATE_' + cid;
+  // 上次產生的內容（文字、照片選擇、分類、說明、順序）會存起來，下次打開自動帶回；本機上傳的照片不存，需重新選
+  let saved = null; if (!st) { try { saved = JSON.parse(SET[skey] || 'null'); } catch (e) {} }
+  const PH = st ? st.PH : ((saved && saved.ph) || []).filter(p => !p.local).map(p => Object.assign({ src: '' }, p));   // { id, name, path, src, sec, cap, on, local }
+  const data0 = st ? st.o : ((saved && saved.o) || {});
+  const lostLocal = !st && saved && (saved.ph || []).some(p => p.local && p.on);
   const fields = [
     { k: '業主', label: '業主', def: c['客戶名稱'] || '' },
     { k: '案場', label: '工程案場', def: nameOfRow(c) },
@@ -2298,8 +2305,18 @@ function reportDialog(cid, after) {
         <span class="small muted" style="margin-left:6px">勾選的設為：</span>${RPT_SECS.map(x => `<button type="button" class="btn sm ghost" data-setsec="${x}">${x}</button>`).join('')}</div>
       <div data-x="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px"></div></div>` }
   ];
-  dialog({ title: '結案報告', wide: true, body: formHTML(fields), onOpen: ({ bd }) => {
+  dialog({ title: '結案報告', wide: true, body: (saved ? `<div class="note ok small">已帶入上次的內容（${esc(saved.at || '')}）${lostLocal ? '；本機上傳的照片不會保存，請重新加入' : ''}</div>` : '') + formHTML(fields, data0), onOpen: ({ bd }) => {
       const grid = $('[data-x=grid]', bd), msg = $('[data-x=msg]', bd), tools = $('[data-x=tools]', bd);
+      const loadThumbs = async list => {
+        for (let i = 0; i < list.length; i += 6) {
+          msg.textContent = `下載照片 ${Math.min(i + 6, list.length)}／${list.length}…`;
+          const t = await api('driveThumbs', { ids: list.slice(i, i + 6).map(p => p.id), size: 1400 });
+          (t.images || []).forEach(im => { const p = PH.find(x => x.id === im.id); if (p) { if (im.data) p.src = im.data; else { p.on = false; p.err = im.error || '無法讀取'; } } });
+          draw();
+        }
+        const bad = list.filter(p => !p.src).length;
+        if (bad) toast(bad + ' 張照片無法讀取（可能已刪除、不是圖片或檔案太大），已取消勾選', false);
+      };
       const draw = () => {
         tools.classList.toggle('hide', !PH.length);
         const n = PH.filter(p => p.on).length;
@@ -2321,7 +2338,7 @@ function reportDialog(cid, after) {
       $$('[data-setsec]', bd).forEach(b => b.onclick = () => { PH.forEach(p => { if (p.on) p.sec = b.dataset.setsec; }); draw(); });
       $('[data-x=local]', bd).onchange = async e => {
         const fs = [...e.target.files]; e.target.value = '';
-        for (const f of fs) { try { PH.push({ id: 'L' + Date.now() + Math.random(), name: f.name, path: '', src: await rptResize(f), sec: rptGuessSec('', f.name), cap: '', on: true }); draw(); } catch (er) { toast(er.message, false); } }
+        for (const f of fs) { try { PH.push({ id: 'L' + Date.now() + Math.random(), name: f.name, path: '', src: await rptResize(f), sec: rptGuessSec('', f.name), cap: '', on: true, local: true }); draw(); } catch (er) { toast(er.message, false); } }
       };
       $('[data-x=drive]', bd).onclick = async ev => {
         const btn = ev.target, url = $('[name=_folder]', bd).value.trim();
@@ -2334,33 +2351,36 @@ function reportDialog(cid, after) {
           const add = (j.files || []).filter(f => !have.has(f.id)).map(f => ({ id: f.id, name: f.name, path: f.folder || '', src: '', sec: rptGuessSec(f.folder, f.name), cap: '', on: true }));
           if (!add.length) { msg.textContent = (j.files || []).length ? '這些照片已經讀過了' : '資料夾「' + (j.name || '') + '」裡沒有照片'; return; }
           PH.push(...add); draw();
-          for (let i = 0; i < add.length; i += 6) {
-            msg.textContent = `下載照片 ${Math.min(i + 6, add.length)}／${add.length}…`;
-            const t = await api('driveThumbs', { ids: add.slice(i, i + 6).map(p => p.id), size: 1400 });
-            (t.images || []).forEach(im => { const p = PH.find(x => x.id === im.id); if (p) { if (im.data) p.src = im.data; else { p.on = false; p.err = im.error || '無法讀取'; } } });
-            draw();
-          }
-          const bad = add.filter(p => !p.src).length;
-          if (bad) toast(bad + ' 張照片無法讀取（可能不是圖片或檔案太大），已取消勾選', false);
+          await loadThumbs(add);
         } catch (er) {
           msg.textContent = '';
           toast(/未知的操作/.test(er.message) ? '後端還沒更新：請先把 Code.gs 換成新版並「新版本部署」，才能讀取雲端照片（也可先用「本機照片」）' : er.message, false);
         } finally { btn.disabled = false; draw(); }
       };
+      draw();
+      const miss = PH.filter(p => !p.src && !p.local);
+      if (miss.length) loadThumbs(miss).catch(er => { msg.textContent = ''; toast(er.message, false); }).finally(draw);
     },
     buttons: [{ text: '取消', cls: 'ghost', click: () => { if (after) setTimeout(after, 30); } }, '|', { text: '產生結案報告', cls: 'acc', click: async ({ bd }) => {
       const o = formData(bd, fields);
       const ph = PH.filter(p => p.on && p.src);
       if (!ph.length) throw new Error('請先加入並勾選照片');
       if (ph.some(p => !p.sec)) throw new Error('還有勾選的照片沒有分類（施工前／施工中／施工後）');
-      showBill(reportHTML(o, ph), after);
+      const keep = { at: TODAY, o, ph: PH.map(p => ({ id: p.id, name: p.name, path: p.path, sec: p.sec, cap: p.cap, on: p.on, local: !!p.local })) };
+      const kv = JSON.stringify(keep);
+      if (kv !== SET[skey]) { SET[skey] = kv; api('save', { table: '設定', row: { key: skey, value: kv } }).catch(() => {}); }
+      showBill(reportHTML(o, ph), after, { title: '結案報告預覽', editable: true, onEdit: ov => {
+        // 預覽上直接改的照片說明，帶回編輯畫面
+        $$('[data-pcap]', ov).forEach(el => { const p = PH.find(x => x.id === el.dataset.pcap); if (p) { const t = el.textContent.trim(); p.cap = t === p.sec ? '' : t; } });
+        reportDialog(cid, after, { o, PH });
+      } });
     } }] });
 }
 function reportHTML(o, ph) {
   const cols = Number(o['欄數']) === 3 ? 3 : 2;
   const W = 794 - 120, gap = 12, cw = (W - gap * (cols - 1)) / cols, ch = Math.round(cw * 0.75), rowH = ch + 30 + gap;
   const H = 1123 - 112, secH = 40;
-  const tr = (l, v) => v ? `<tr><th>${l}</th><td>${v}</td></tr>` : '';
+  const tr = (l, v) => v ? `<tr><th>${l}</th><td contenteditable>${v}</td></tr>` : '';
   const period = o['開工'] || o['完工'] ? [ymdFull(o['開工']), ymdFull(o['完工'])].filter(Boolean).join(' ～ ') : '';
   const head = (first) => first ? `<div class="b-head">
       <img src="${esc(LOGO)}" alt="">
@@ -2368,7 +2388,7 @@ function reportHTML(o, ph) {
       <div class="b-title"><div class="zh">結 案 報 告</div><div class="en">COMPLETION REPORT</div></div></div>
     <div class="b-meta"><table class="b-kv">${tr('業　　主', esc(o['業主']))}${tr('工程案場', esc(o['案場']))}${tr('地　　址', esc(o['地址']))}</table>
       <table class="b-kv">${tr('工程項目', esc(o['項目']))}${tr('施工期間', period)}${tr('報告日期', ymdFull(o['日期']))}</table></div>
-    ${o['說明'] ? `<div class="r-note">${esc(o['說明'])}</div>` : ''}`
+    ${o['說明'] ? `<div class="r-note" contenteditable>${esc(o['說明'])}</div>` : ''}`
     : `<div class="r-mini"><span>${esc(coSet('CO_NAME'))}｜結案報告</span><span>${esc(o['案場'] || '')}</span></div>`;
   const firstUsed = 250 + (o['說明'] ? 30 + Math.ceil(String(o['說明']).length / 40) * 22 : 0);
   // 依分類排版成多頁
@@ -2393,7 +2413,7 @@ function reportHTML(o, ph) {
   const total = pages.length;
   return pages.map((pg, pi) => `<div class="bill rpt">${head(pg.first)}
     ${pg.blocks.map(b => `<div class="r-sec">${b.sec}${b.cont ? '（續）' : ''}</div>
-      ${b.rows.map(r => `<div class="r-row" style="grid-template-columns:repeat(${cols},1fr)">${r.map(p => `<figure><div class="r-img" style="height:${ch}px"><img src="${p.src}" alt=""></div><figcaption><b>${p.no}</b>${p.cap ? esc(p.cap) : esc(b.sec)}</figcaption></figure>`).join('')}</div>`).join('')}`).join('')}
+      ${b.rows.map(r => `<div class="r-row" style="grid-template-columns:repeat(${cols},1fr)">${r.map(p => `<figure><div class="r-img" style="height:${ch}px"><img src="${p.src}" alt=""></div><figcaption><b>${p.no}</b><span contenteditable data-pcap="${esc(p.id)}">${p.cap ? esc(p.cap) : esc(b.sec)}</span></figcaption></figure>`).join('')}</div>`).join('')}`).join('')}
     ${pg.sign ? `<div class="r-sign"><div><div class="b-h">施工單位</div><div class="b-stamp has"><img src="${STAMP}" alt=""></div></div><div><div class="b-h">業主簽收</div><div class="b-stamp" style="height:150px">簽名／日期</div></div></div>` : ''}
     <div class="r-pg">第 ${pi + 1} 頁／共 ${total} 頁</div></div>`).join('');
 }
