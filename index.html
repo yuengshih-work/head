@@ -39,7 +39,7 @@ header.top img{width:30px;height:30px;filter:invert(1)}
 header.top .t{font-family:var(--serif);font-weight:900;font-size:19px;letter-spacing:.04em;white-space:nowrap}
 header.top .sp{flex:1}
 header.top .who{font-size:12px;opacity:.75;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-header.top button{background:transparent;border:1px solid rgba(243,239,230,.35);color:#F3EFE6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer}
+header.top button{background:transparent;border:1px solid rgba(243,239,230,.35);color:#F3EFE6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;white-space:nowrap;flex:none}
 nav.side{display:none}
 main{padding:16px 16px calc(var(--navh) + env(safe-area-inset-bottom,0px) + 24px);max-width:1180px;margin:0 auto}
 nav.bar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--card);border-top:1px solid var(--line);
@@ -232,6 +232,7 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
   <div class="sp"></div>
   <div class="who" id="who"></div>
   <button id="btnReload" class="hide" title="重新讀取">↻</button>
+  <button id="btnLogout" class="hide" title="登出">登出</button>
 </header>
 
 <div id="login" class="hide">
@@ -324,7 +325,7 @@ function onCredential(resp) {
   start();
 }
 function showLogin(msg) {
-  ['#app', '#side', '#bar', '#btnReload'].forEach(s => $(s).classList.add('hide'));
+  ['#app', '#side', '#bar', '#btnReload', '#btnLogout'].forEach(s => $(s).classList.add('hide'));
   $('#login').classList.remove('hide');
   $('#loginMsg').textContent = msg || '';
   $('#who').textContent = '';
@@ -669,7 +670,7 @@ async function start() {
     Object.keys(DB).forEach(k => DB[k] = j.data[k] || []);
     SET = j.settings || {}; TODAY = j.today || TODAY;
     $('#who').textContent = j.email;
-    ['#app', '#side', '#bar', '#btnReload'].forEach(s => $(s).classList.remove('hide'));
+    ['#app', '#side', '#bar', '#btnReload', '#btnLogout'].forEach(s => $(s).classList.remove('hide'));
     if (j.version !== '2026-10-22-fee') setTimeout(() => toast('後端程式還是舊版：請先更新 Code.gs 並「部署 → 管理部署作業 → 新版本」，行政固定費用、貸款才能使用', false), 600);
     go(hashPage() || 'home', true);
     $$('nav [data-go]').forEach(b => b.setAttribute('aria-current', b.dataset.go === PAGE ? 'page' : 'false'));
@@ -2821,6 +2822,7 @@ function convertWorkbook(wb) {
    ===================================================================== */
 buildNav();
 $('#btnReload').onclick = reloadAll;
+$('#btnLogout').onclick = async () => { if (!await confirmBox('確定要登出？', '登出')) return; try { google.accounts.id.disableAutoSelect(); } catch (e) {} logout(false); };
 (function init() {
   // 本機測試：?devtoken=xxx（僅限 localhost 後端）
   const qs = new URLSearchParams(location.search);
