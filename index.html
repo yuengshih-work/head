@@ -2082,11 +2082,44 @@ function nextBillNo(date) {
   const used = DB['收款紀錄'].map(r => String(r['請款單號'] || '')).filter(x => x.indexOf(base) === 0).map(x => Number(x.slice(-2)) || 0);
   return base + '-' + pad((used.length ? Math.max(...used) : 0) + 1);
 }
+// 合併請款：同案場／同客戶的其他未收款項（含尚未排定收款的合約，例如追加工程）
+function billCandidates(r, c) {
+  const cust = String(c['客戶名稱'] || '').trim();
+  const sameCust = x => { const cc = DB['合約'].find(k => k['合約ID'] === x['合約ID']) || {}; return cust && String(cc['客戶名稱'] || '').trim() === cust; };
+  const near = x => x['案場ID'] === r['案場ID'] || sameCust(x);
+  const out = [];
+  DB['收款紀錄'].filter(x => x['收款ID'] !== r['收款ID'] && x['收款狀態'] !== '已收' && near(x)).forEach(x => {
+    const cc = DB['合約'].find(k => k['合約ID'] === x['合約ID']) || {};
+    out.push({ key: 'r:' + x['收款ID'], kind: 'rcv', row: x, c: cc, label: [cc['合約說明'], x['期別']].filter(Boolean).join('　') || '收款', parts: rcvParts(x), site: nameOfRow(x),
+      on: !!(r['請款單號'] && x['請款單號'] === r['請款單號']) });
+  });
+  DB['合約'].filter(k => k['狀態'] !== '已完成' && near(k)).forEach(k => {
+    const st = contractStat(k);
+    if (st.rest < 10) return;   // 幾元的尾差不列
+    out.push({ key: 'c:' + k['合約ID'], kind: 'rest', c: k, label: (k['合約說明'] || '合約') + '（尚未排定收款）', rest: st.rest, site: nameOfRow(k), taxIncl: k['含稅'] === '是', on: false });
+  });
+  return out;
+}
+function restParts(it, addTax) {
+  if (it.taxIncl) { const net = Math.round(it.rest / 1.05); return { net, tax: it.rest - net, total: it.rest }; }
+  const tax = addTax ? Math.round(it.rest * 0.05) : 0;
+  return { net: it.rest, tax, total: it.rest + tax };
+}
 function billDialog(rid, after) {
   const r = DB['收款紀錄'].find(x => x['收款ID'] === rid); if (!r) return;
   const c = DB['合約'].find(x => x['合約ID'] === r['合約ID']) || {};
   const p = rcvParts(r);
   const billDate = D10(r['請款日期']) || TODAY;
+  const cands = billCandidates(r, c);
+  const defTax = p.tax > 0;
+  const mergeHTML = cands.length ? `<div style="background:var(--soft);padding:10px 12px;border-radius:10px">
+      <div class="small muted" style="margin-bottom:6px">合併請款（同案場／同客戶的其他未收款項，勾選後一起列在這張請款單）</div>
+      ${cands.map(it => `<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px dashed var(--line);font-size:14px">
+        <input type="checkbox" data-merge="${esc(it.key)}" ${it.on ? 'checked' : ''} style="margin-top:3px">
+        <div style="flex:1"><b>${esc(it.label)}</b><div class="small muted">${esc(it.site)}${it.kind === 'rest' ? '　未排定 ' + money(it.rest) + (it.taxIncl ? '（含稅）' : '（未稅）') : '　' + money(it.parts.total) + (it.parts.tax ? '（未稅 ' + money(it.parts.net) + '＋稅 ' + money(it.parts.tax) + '）' : '')}${it.kind === 'rcv' && it.row['請款單號'] && !it.on ? '　已在 ' + esc(it.row['請款單號']) + ' 請款' : ''}</div>
+          ${it.kind === 'rest' && !it.taxIncl ? `<label class="chk small" style="display:inline-flex;gap:6px;align-items:center;margin-top:3px"><input type="checkbox" data-mtax="${esc(it.key)}" ${defTax ? 'checked' : ''}> 加 5% 營業稅</label>` : ''}
+          ${it.kind === 'rest' ? '<div class="small muted">產生時會自動建立一筆預計收款</div>' : ''}</div></div>`).join('')}
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:15px">本張請款合計 <b data-mtot></b></div></div>` : '';
   const fields = [
     { k: '客戶名稱', label: '客戶（抬頭）', req: true, def: c['客戶名稱'] || '' },
     { k: '客戶統編', label: '客戶統編', def: c['客戶統編'] || '' },
@@ -2097,6 +2130,7 @@ function billDialog(rid, after) {
     { k: 'date', label: '請款日期', type: 'date', def: billDate, req: true },
     { k: 'due', label: '付款期限', type: 'date', def: D10(r['預計收款日']) > billDate ? D10(r['預計收款日']) : addDays(billDate, 7) },
     { k: 'item', label: '請款項目', def: [c['合約說明'], r['期別']].filter(Boolean).join('　') },
+    { k: '_merge', type: 'html', html: mergeHTML },
     { k: 'memo', label: '備註（印在請款單上）', type: 'textarea', def: c['備註'] && /期|%/.test(c['備註']) ? '付款條件：' + c['備註'] : '' },
     { k: '_bank', type: 'html', html: `<div style="background:var(--soft);padding:10px 12px;border-radius:10px">
       <div class="small muted" style="margin-bottom:6px">匯款帳戶</div>
@@ -2108,32 +2142,62 @@ function billDialog(rid, after) {
         <label style="display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)">戶名<input name="BANK_HOLDER" value="${esc(coSet('BANK_HOLDER'))}"></label></div>
       <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:14px"><input type="checkbox" name="useStamp" ${SET.BILL_STAMP === '否' ? '' : 'checked'}> 蓋公司統一發票專用章</label></div>` }
   ];
-  dialog({ title: '產生請款單', onOpen: ({ bd }) => { const sync = () => { const v = ($('[name=bankSel]:checked', bd) || {}).value; $('[data-custom]', bd).style.display = v === 'custom' ? 'grid' : 'none'; }; $$('[name=bankSel]', bd).forEach(r => r.onchange = sync); sync(); }, body: `<div class="note ok">${esc(nameOfRow(r))}｜${esc(r['期別'] || '')}　本期 ${money(p.total)}${p.tax ? '（未稅 ' + money(p.net) + '＋稅 ' + money(p.tax) + '）' : ''}</div>` + formHTML(fields),
+  const picked = bd => cands.filter(it => { const el = $(`[data-merge="${it.key}"]`, bd); return el && el.checked; })
+    .map(it => Object.assign({}, it, it.kind === 'rest' ? { parts: restParts(it, !!($(`[data-mtax="${it.key}"]`, bd) || {}).checked) } : {}));
+  dialog({ title: '產生請款單', onOpen: ({ bd }) => {
+      const sync = () => { const v = ($('[name=bankSel]:checked', bd) || {}).value; $('[data-custom]', bd).style.display = v === 'custom' ? 'grid' : 'none'; }; $$('[name=bankSel]', bd).forEach(r => r.onchange = sync); sync();
+      const tot = $('[data-mtot]', bd);
+      if (tot) { const upd = () => { const ps = picked(bd); tot.textContent = money(p.total + sum(ps, x => x.parts.total)) + (ps.length ? '（共 ' + (ps.length + 1) + ' 項）' : ''); }; $$('[data-merge],[data-mtax]', bd).forEach(el => el.onchange = upd); upd(); }
+    }, body: `<div class="note ok">${esc(nameOfRow(r))}｜${esc(r['期別'] || '')}　本期 ${money(p.total)}${p.tax ? '（未稅 ' + money(p.net) + '＋稅 ' + money(p.tax) + '）' : ''}</div>` + formHTML(fields),
     buttons: [{ text: '取消', cls: 'ghost', click: () => { if (after) setTimeout(after, 30); } }, '|', { text: '產生請款單', cls: 'acc', click: async ({ bd }) => {
       const o = formData(bd, fields);
+      const merge = picked(bd);
       const bankSel = ($('[name=bankSel]:checked', bd) || {}).value || 'ctbc';
       const useStamp = $('[name=useStamp]', bd).checked;
       const bank = { BANK_SEL: bankSel, BILL_STAMP: useStamp ? '是' : '否' };
       if (bankSel === 'custom') { ['BANK_NAME', 'BANK_ACCOUNT', 'BANK_HOLDER'].forEach(k => bank[k] = $(`[name=${k}]`, bd).value.trim()); if (!bank.BANK_ACCOUNT) throw new Error('請填寫其他帳戶的帳號'); }
-      // 記住客戶資料、匯款資料、請款單號
-      const cPatch = { '合約ID': c['合約ID'] }; let cChg = false;
-      ['客戶名稱', '客戶統編', '聯絡人', '聯絡電話', '客戶地址'].forEach(k => { if ((c[k] || '') !== o[k]) { cPatch[k] = o[k]; cChg = true; } });
-      if (cChg && c['合約ID']) await saveRow('合約', cPatch);
+      // 記住客戶資料（合併的合約也一起補上）、匯款資料、請款單號
+      const cids = [c['合約ID']].concat(merge.map(it => it.c['合約ID'])).filter((x, i, a) => x && a.indexOf(x) === i);
+      const cPatches = [];
+      cids.forEach(id => { const cc = DB['合約'].find(x => x['合約ID'] === id) || {}; const cp = { '合約ID': id }; let chg = false;
+        ['客戶名稱', '客戶統編', '聯絡人', '聯絡電話', '客戶地址'].forEach(k => { if (id !== c['合約ID'] && !o[k]) return; if ((cc[k] || '') !== o[k]) { cp[k] = o[k]; chg = true; } }); if (chg) cPatches.push(cp); });
+      if (cPatches.length) await saveMany('合約', cPatches);
       for (const k of Object.keys(bank)) if (bank[k] !== (SET[k] == null ? '' : SET[k])) { await api('save', { table: '設定', row: { key: k, value: bank[k] } }); SET[k] = bank[k]; }
-      await saveRow('收款紀錄', { '收款ID': r['收款ID'], '請款單號': o.no, '請款日期': o.date });
+      // 尚未排定的合約 → 先建立一筆預計收款
+      const newRows = merge.filter(it => it.kind === 'rest').map(it => {
+        const n = DB['收款紀錄'].filter(x => x['合約ID'] === it.c['合約ID']).length + 1;
+        return { '合約ID': it.c['合約ID'], '案場ID': it.c['案場ID'] || '', '案場名稱': it.c['案場名稱'] || '', '期別': '第' + n + '期', '未稅金額': it.parts.net, '稅額': it.parts.tax, '收款金額': it.parts.total,
+          '收款狀態': '未收', '預計收款日': o.due || '', '請款單號': o.no, '請款日期': o.date, '備註': '合併請款建立' };
+      });
+      const created = newRows.length ? (await saveMany('收款紀錄', newRows)).rows : [];
+      // 取消勾選的：若原本在這張單上，清掉請款單號
+      const unpick = cands.filter(it => it.kind === 'rcv' && it.on && !merge.some(m => m.key === it.key)).map(it => ({ '收款ID': it.row['收款ID'], '請款單號': '', '請款日期': '' }));
+      const tags = [{ '收款ID': r['收款ID'], '請款單號': o.no, '請款日期': o.date }].concat(merge.filter(it => it.kind === 'rcv').map(it => ({ '收款ID': it.row['收款ID'], '請款單號': o.no, '請款日期': o.date })));
+      await saveMany('收款紀錄', tags.concat(unpick));
       render();
-      showBill(billHTML(Object.assign({}, o, { bank: bankOf(bankSel), stamp: useStamp, r: DB['收款紀錄'].find(x => x['收款ID'] === r['收款ID']), c: DB['合約'].find(x => x['合約ID'] === r['合約ID']) || c })), after);
+      const rows = [r['收款ID']].concat(merge.filter(it => it.kind === 'rcv').map(it => it.row['收款ID'])).map(id => DB['收款紀錄'].find(x => x['收款ID'] === id)).concat(created);
+      const items = rows.map((x, i) => { const cc = DB['合約'].find(k => k['合約ID'] === x['合約ID']) || {}; return { r: x, c: cc, label: i === 0 ? o.item : [cc['合約說明'], x['期別']].filter(Boolean).join('　') }; });
+      showBill(billHTML(Object.assign({}, o, { bank: bankOf(bankSel), stamp: useStamp, items })), after);
     } }] });
 }
 function billHTML(o) {
-  const r = o.r, c = o.c, p = rcvParts(r);
-  const all = DB['收款紀錄'].filter(x => x['合約ID'] === r['合約ID']);
-  const got = sum(all.filter(x => x['收款狀態'] === '已收'), x => x['收款金額']);
-  const cAmt = N(c['合約金額']);
-  const billed = sum(all.filter(x => x['收款狀態'] !== '已收' && x['請款日期'] && x['收款ID'] !== r['收款ID'] && D10(x['請款日期']) <= o.date), x => x['收款金額']);
-  const prevTotal = got + billed;
-  const rest = Math.max(0, cAmt - prevTotal - p.total);
+  const items = o.items, first = items[0].r;
+  const P = items.map(it => rcvParts(it.r));
+  const tNet = sum(P, x => x.net), tTax = sum(P, x => x.tax), tTot = sum(P, x => x.total);
+  const thisIds = new Set(items.map(it => it.r['收款ID']));
+  // 合約進度：每份合約一列（含稅合約用含稅金額比；未稅合約用未稅金額比）
+  const cons = []; items.forEach(it => { if (it.c['合約ID'] && !cons.some(c => c['合約ID'] === it.c['合約ID'])) cons.push(it.c); });
+  const prog = cons.filter(c => N(c['合約金額'])).map(c => {
+    const incl = c['含稅'] === '是', v = x => incl ? rcvParts(x).total : rcvParts(x).net;
+    const all = DB['收款紀錄'].filter(x => x['合約ID'] === c['合約ID']);
+    const prev = sum(all.filter(x => !thisIds.has(x['收款ID']) && (x['收款狀態'] === '已收' || (x['請款日期'] && D10(x['請款日期']) <= o.date))), v);
+    const now = sum(all.filter(x => thisIds.has(x['收款ID'])), v);
+    const amt = N(c['合約金額']);
+    return { name: c['合約說明'] || '合約', amt, incl, prev, now, rest: Math.max(0, amt - prev - now) };
+  });
+  const multi = prog.length > 1;
   const tr = (l, v) => `<tr><th>${l}</th><td>${v}</td></tr>`;
+  const sites = items.map(it => nameOfRow(it.r)).filter((x, i, a) => a.indexOf(x) === i).join('、');
   return `<div class="bill">
     <div class="b-head">
       <img src="${esc(LOGO)}" alt="">
@@ -2142,16 +2206,17 @@ function billHTML(o) {
     </div>
     <div class="b-meta">
       <table class="b-kv">${tr('客　　戶', esc(o['客戶名稱']))}${o['客戶統編'] ? tr('統一編號', esc(o['客戶統編'])) : ''}${o['聯絡人'] || o['聯絡電話'] ? tr('聯 絡 人', esc([o['聯絡人'], o['聯絡電話']].filter(Boolean).join('　'))) : ''}${o['客戶地址'] ? tr('地　　址', esc(o['客戶地址'])) : ''}</table>
-      <table class="b-kv">${tr('請款單號', esc(o.no))}${tr('請款日期', ymdFull(o.date))}${tr('付款期限', ymdFull(o.due) || '—')}${tr('工程案場', esc(nameOfRow(r)))}</table>
+      <table class="b-kv">${tr('請款單號', esc(o.no))}${tr('請款日期', ymdFull(o.date))}${tr('付款期限', ymdFull(o.due) || '—')}${tr('工程案場', esc(sites || nameOfRow(first)))}</table>
     </div>
     <table class="b-items">
       <thead><tr><th style="width:44px">項次</th><th>請款項目</th><th class="n">未稅金額</th><th class="n">營業稅 5%</th><th class="n">金額</th></tr></thead>
-      <tbody><tr><td class="c">1</td><td>${esc(o.item)}</td><td class="n">${money(p.net)}</td><td class="n">${p.tax ? money(p.tax) : '—'}</td><td class="n">${money(p.total)}</td></tr>
+      <tbody>${items.map((it, i) => `<tr><td class="c">${i + 1}</td><td>${esc(it.label)}</td><td class="n">${money(P[i].net)}</td><td class="n">${P[i].tax ? money(P[i].tax) : '—'}</td><td class="n">${money(P[i].total)}</td></tr>`).join('')}
+        ${items.length > 1 ? `<tr><td></td><td style="text-align:right;color:#6a727c">小計</td><td class="n">${money(tNet)}</td><td class="n">${tTax ? money(tTax) : '—'}</td><td class="n">${money(tTot)}</td></tr>` : ''}
         <tr class="b-fill"><td></td><td></td><td></td><td></td><td></td></tr></tbody>
-      <tfoot><tr><td colspan="4" class="b-cap">本期請款合計　新臺幣 <b>${cnMoney(p.total)}</b></td><td class="n b-total">${money(p.total)}</td></tr></tfoot>
+      <tfoot><tr><td colspan="4" class="b-cap">本期請款合計　新臺幣 <b>${cnMoney(tTot)}</b></td><td class="n b-total">${money(tTot)}</td></tr></tfoot>
     </table>
-    ${cAmt ? `<table class="b-sum"><tr><th>合約總價</th><th>前期已請／已收</th><th>本期請款</th><th>本期後未請款</th></tr>
-      <tr><td>${money(cAmt)}<span>${c['含稅'] === '是' ? '（含稅）' : '（未稅）'}</span></td><td>${money(prevTotal)}</td><td><b>${money(p.total)}</b></td><td>${money(rest)}</td></tr></table>` : ''}
+    ${prog.length ? `<table class="b-sum"><tr>${multi ? '<th>合約</th>' : ''}<th>合約總價</th><th>前期已請／已收</th><th>本期請款</th><th>本期後未請款</th></tr>
+      ${prog.map(g => `<tr>${multi ? `<td style="font-size:13px">${esc(g.name)}</td>` : ''}<td>${money(g.amt)}<span>${g.incl ? '（含稅）' : '（未稅）'}</span></td><td>${money(g.prev)}</td><td><b>${money(g.now)}</b></td><td>${money(g.rest)}</td></tr>`).join('')}</table>` : ''}
     <div class="b-foot">
       <div class="b-pay"><div class="b-h">匯款資訊</div>
         ${o.bank && o.bank.account ? `<div>銀行：${esc(o.bank.name)}${o.bank.code ? '（銀行代碼 ' + esc(o.bank.code) + '）' : ''}</div><div>帳號：<b style="font-size:16px;letter-spacing:.04em">${esc(o.bank.account)}</b></div><div>戶名：${esc(o.bank.holder)}</div>` : '<div class="b-blank">銀行：<br>帳號：<br>戶名：</div>'}
