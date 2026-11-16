@@ -193,7 +193,7 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .billbar{display:flex;gap:10px;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;background:#1E2833;color:#F3EFE6;flex-wrap:wrap}
 .billscroll{flex:1;overflow:auto;padding:12px}
 .billzoom{width:794px;margin:0 auto}
-.bill{width:794px;min-height:1123px;background:#fff;color:#1b1f24;padding:56px 60px;font:14px/1.6 var(--sans);box-shadow:0 6px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:22px}
+.bill{width:794px;background:#fff;color:#1b1f24;padding:44px 56px;font:14px/1.6 var(--sans);box-shadow:0 6px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:16px}
 .bill .b-head{display:grid;grid-template-columns:64px 1fr auto;gap:16px;align-items:center;border-bottom:3px solid #1E2833;padding-bottom:14px}
 .bill .b-head img{width:64px;height:64px}
 .bill .b-coname{font-family:var(--serif);font-weight:900;font-size:22px;letter-spacing:.06em}
@@ -210,13 +210,13 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .bill .b-cap b{font-size:15px;letter-spacing:.05em}.bill .b-total{font-size:20px;font-weight:700}
 .bill .b-sum{width:100%;border-collapse:collapse;text-align:center;font-variant-numeric:tabular-nums}
 .bill .b-sum th{font-weight:500;color:#6a727c;font-size:12.5px;padding:6px;border:1px solid #d9d3c6;background:#F6F3EC}.bill .b-sum td{padding:8px;border:1px solid #d9d3c6;font-size:15px}.bill .b-sum span{font-size:11px;color:#7a828c}
-.bill .b-foot{display:grid;grid-template-columns:1.4fr 1fr;gap:24px;margin-top:auto}
+.bill .b-foot{display:grid;grid-template-columns:1.4fr 1fr;gap:24px;margin-top:4px}
 .bill .b-h{font-weight:700;font-size:13px;color:#1E2833;margin-bottom:4px;letter-spacing:.05em}
 .bill .b-blank{line-height:2.2;color:#6a727c}
 .bill .b-note{margin-top:12px;font-size:12px;color:#6a727c}
-.bill .b-stamp.has{border:0;height:150px}.bill .b-stamp img{height:142px;width:auto;opacity:.92;mix-blend-mode:multiply}
+.bill .b-stamp.has{border:0;height:124px}.bill .b-stamp img{height:118px;width:auto;opacity:.92;mix-blend-mode:multiply}
 .bill .b-stamp{border:1px dashed #b9b2a3;height:110px;display:flex;align-items:center;justify-content:center;color:#b9b2a3;font-size:12px}.bill .b-stamp.short{height:70px}
-.bill.rpt{gap:0;position:relative}.bill.rpt .b-head{margin-bottom:18px}.bill.rpt .b-meta{margin-bottom:14px}
+.bill.rpt{gap:0;position:relative;min-height:1123px;padding:56px 60px}.bill.rpt .b-head{margin-bottom:18px}.bill.rpt .b-meta{margin-bottom:14px}
 .bill .r-note{white-space:pre-line;font-size:13px;color:#3d444c;background:#F6F3EC;border-left:3px solid #1E2833;padding:8px 12px;margin-bottom:6px}
 .bill .r-mini{display:flex;justify-content:space-between;font-size:12px;color:#7a828c;border-bottom:1px solid #d9d3c6;padding-bottom:8px;margin-bottom:14px}
 .bill .r-sec{font-family:var(--serif);font-weight:900;font-size:17px;letter-spacing:.1em;color:#1E2833;border-left:4px solid #c4552d;padding:2px 0 2px 10px;margin:10px 0 10px;height:28px;box-sizing:border-box}
@@ -227,13 +227,13 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .bill .r-sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:auto;padding-top:14px}
 .bill .r-pg{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:11px;color:#9aa1a8}
 .billzoom .bill+.bill{margin-top:16px}
-@media print{.bill.rpt{break-after:page;page-break-after:always;height:297mm;overflow:hidden}.bill.rpt:last-child{break-after:auto;page-break-after:auto}.billzoom .bill+.bill{margin-top:0}}
+@media print{.bill.rpt{break-after:page;page-break-after:always;height:297mm;min-height:0;padding:16mm 15mm;overflow:hidden}.bill.rpt:last-child{break-after:auto;page-break-after:auto}.billzoom .bill+.bill{margin-top:0}}
 @media print{
   @page{size:A4;margin:0}
   body.printing-bill>*:not(.billov){display:none!important}
   body.printing-bill{background:#fff!important}
   .billov{position:static;background:#fff;display:block}.billbar{display:none!important}.billscroll{padding:0;overflow:visible}.billzoom{zoom:1!important;width:auto}
-  .bill{box-shadow:none;width:210mm;min-height:297mm;padding:16mm 15mm}
+  .bill{box-shadow:none;width:210mm;padding:12mm 14mm}
 }
 </style>
 </head>
@@ -2224,8 +2224,7 @@ function billHTML(o) {
     <table class="b-items">
       <thead><tr><th style="width:44px">項次</th><th>請款項目</th><th class="n">未稅金額</th><th class="n">營業稅 5%</th><th class="n">金額</th></tr></thead>
       <tbody>${items.map((it, i) => `<tr><td class="c">${i + 1}</td><td>${esc(it.label)}</td><td class="n">${money(P[i].net)}</td><td class="n">${P[i].tax ? money(P[i].tax) : '—'}</td><td class="n">${money(P[i].total)}</td></tr>`).join('')}
-        ${items.length > 1 ? `<tr><td></td><td style="text-align:right;color:#6a727c">小計</td><td class="n">${money(tNet)}</td><td class="n">${tTax ? money(tTax) : '—'}</td><td class="n">${money(tTot)}</td></tr>` : ''}
-        <tr class="b-fill"><td></td><td></td><td></td><td></td><td></td></tr></tbody>
+        ${items.length > 1 ? `<tr><td></td><td style="text-align:right;color:#6a727c">小計</td><td class="n">${money(tNet)}</td><td class="n">${tTax ? money(tTax) : '—'}</td><td class="n">${money(tTot)}</td></tr>` : ''}</tbody>
       <tfoot><tr><td colspan="4" class="b-cap">本期請款合計　新臺幣 <b>${cnMoney(tTot)}</b></td><td class="n b-total">${money(tTot)}</td></tr></tfoot>
     </table>
     ${prog.length ? `<table class="b-sum"><tr>${multi ? '<th>合約</th>' : ''}<th>合約總價</th><th>前期已請／已收</th><th>本期請款</th><th>本期後未請款</th></tr>
