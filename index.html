@@ -216,6 +216,18 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .bill .b-note{margin-top:12px;font-size:12px;color:#6a727c}
 .bill .b-stamp.has{border:0;height:150px}.bill .b-stamp img{height:142px;width:auto;opacity:.92;mix-blend-mode:multiply}
 .bill .b-stamp{border:1px dashed #b9b2a3;height:110px;display:flex;align-items:center;justify-content:center;color:#b9b2a3;font-size:12px}.bill .b-stamp.short{height:70px}
+.bill.rpt{gap:0;position:relative}.bill.rpt .b-head{margin-bottom:18px}.bill.rpt .b-meta{margin-bottom:14px}
+.bill .r-note{white-space:pre-line;font-size:13px;color:#3d444c;background:#F6F3EC;border-left:3px solid #1E2833;padding:8px 12px;margin-bottom:6px}
+.bill .r-mini{display:flex;justify-content:space-between;font-size:12px;color:#7a828c;border-bottom:1px solid #d9d3c6;padding-bottom:8px;margin-bottom:14px}
+.bill .r-sec{font-family:var(--serif);font-weight:900;font-size:17px;letter-spacing:.1em;color:#1E2833;border-left:4px solid #c4552d;padding:2px 0 2px 10px;margin:10px 0 10px;height:28px;box-sizing:border-box}
+.bill .r-row{display:grid;gap:12px;margin-bottom:12px}
+.bill .r-row figure{margin:0}.bill .r-img{background:#f1eee8;border:1px solid #e3ded3;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.bill .r-img img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.bill .r-row figcaption{font-size:12.5px;color:#3d444c;padding-top:5px;height:25px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.bill .r-row figcaption b{display:inline-block;min-width:22px;color:#c4552d;margin-right:6px}
+.bill .r-sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:auto;padding-top:14px}
+.bill .r-pg{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:11px;color:#9aa1a8}
+.billzoom .bill+.bill{margin-top:16px}
+@media print{.bill.rpt{break-after:page;page-break-after:always;height:297mm;overflow:hidden}.bill.rpt:last-child{break-after:auto;page-break-after:auto}.billzoom .bill+.bill{margin-top:0}}
 @media print{
   @page{size:A4;margin:0}
   body.printing-bill>*:not(.billov){display:none!important}
@@ -1618,7 +1630,7 @@ function contractDetail(cid) {
     <div class="list">${inv.length ? inv.map((v, i) => `<div class="row" style="grid-template-columns:auto 1fr auto auto"><div class="d">${md(v.date)}</div><div class="m"><div class="t1">${esc(v.number)}</div></div><div class="amt">${money(v.amount)}</div><button class="btn sm ghost" data-delinv="${i}">刪除</button></div>`).join('') : '<div class="empty">尚無發票紀錄</div>'}
       ${inv.length ? `<div class="sumbar">發票合計 <b>${money(sum(inv, v => v.amount))}</b></div>` : ''}</div>`;
   const dl = dialog({ title: c['合約說明'] || '合約', wide: true, body,
-    buttons: [{ text: '編輯合約', cls: 'ghost', click: () => { setTimeout(() => editContract(c, {}, () => contractDetail(cid)), 50); } }, '|', { text: '關閉', cls: 'acc' }] });
+    buttons: [{ text: '編輯合約', cls: 'ghost', click: () => { setTimeout(() => editContract(c, {}, () => contractDetail(cid)), 50); } }, { text: '結案報告', cls: 'ghost', click: () => { setTimeout(() => reportDialog(cid, () => contractDetail(cid)), 50); } }, '|', { text: '關閉', cls: 'acc' }] });
   const reopen = () => { dl.close(); contractDetail(cid); };
   $('[data-x=sched]', dl.bd).onclick = () => { dl.close(); scheduleDialog(c); };
   $('[data-x=addrcv]', dl.bd).onclick = () => { dl.close(); editReceipt(null, { '合約ID': cid, '收款狀態': '已收' }, () => contractDetail(cid)); };
@@ -2236,6 +2248,155 @@ function showBill(html, after) {
   const close = () => { ov.remove(); document.body.classList.remove('printing-bill'); window.removeEventListener('resize', fit); if (after) after(); };
   $('[data-x]', ov).onclick = close;
   $('[data-p]', ov).onclick = () => { $('.billzoom', ov).style.zoom = 1; try { window.print(); } catch (e) {} setTimeout(fit, 300); };
+}
+
+/* =====================================================================
+   結案報告（給業主：基本資料＋施工前／中／後照片）
+   照片來源：Google 雲端資料夾（後端 driveList / driveThumbs 讀取）或從電腦／手機上傳
+   ===================================================================== */
+const RPT_SECS = ['施工前', '施工中', '施工後'];
+function rptGuessSec(path, name) {
+  const t = (String(path || '') + ' ' + String(name || '')).toLowerCase();
+  if (/前|before|原況|現況/.test(t)) return '施工前';
+  if (/後|后|after|完工|完成/.test(t)) return '施工後';
+  if (/中|施工|during|progress/.test(t)) return '施工中';
+  return '';
+}
+function rptResize(file, max = 1400) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = () => rej(new Error('讀取失敗：' + file.name));
+    fr.onload = () => { const im = new Image(); im.onerror = () => rej(new Error('不支援的圖片格式：' + file.name + '（iPhone 的 HEIC 請先轉成 JPG）'));
+      im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)); const cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); res(cv.toDataURL('image/jpeg', 0.85)); };
+      im.src = fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+function reportDialog(cid, after) {
+  const c = DB['合約'].find(x => x['合約ID'] === cid); if (!c) return;
+  const s = site(c['案場ID']) || {};
+  const PH = [];   // { id, name, path, src, sec, cap, on }
+  const fkey = 'RPT_FOLDER_' + cid;
+  const fields = [
+    { k: '業主', label: '業主', def: c['客戶名稱'] || '' },
+    { k: '案場', label: '工程案場', def: nameOfRow(c) },
+    { k: '地址', label: '地址', full: true, def: c['客戶地址'] || s['地址'] || '' },
+    { k: '項目', label: '工程項目', full: true, def: c['合約說明'] || '' },
+    { k: '開工', label: '施工開始', type: 'date', def: D10(c['施工開始']) },
+    { k: '完工', label: '施工完成', type: 'date', def: D10(c['施工結束']) },
+    { k: '日期', label: '報告日期', type: 'date', def: TODAY },
+    { k: '欄數', label: '照片大小', type: 'select', options: [{ v: '2', l: '大（每列 2 張）' }, { v: '3', l: '小（每列 3 張）' }], def: '2' },
+    { k: '說明', label: '施工說明／保固說明（印在報告上，選填）', type: 'textarea', def: '' },
+    { k: '_ph', type: 'html', html: `<div style="background:var(--soft);padding:10px 12px;border-radius:10px">
+      <div class="small muted" style="margin-bottom:6px">照片：貼上 Google 雲端「資料夾」網址（子資料夾取名「施工前／施工中／施工後」會自動分類），或直接從電腦／手機選照片</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><input name="_folder" placeholder="https://drive.google.com/drive/folders/…" value="${esc(SET[fkey] || '')}" style="flex:1;min-width:220px">
+        <button type="button" class="btn" data-x="drive">讀取雲端照片</button>
+        <label class="btn ghost" style="cursor:pointer">＋ 本機照片<input type="file" accept="image/*" multiple data-x="local" style="display:none"></label></div>
+      <div data-x="msg" class="small muted" style="margin-top:6px"></div>
+      <div data-x="tools" class="hide" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <span class="small muted">全部：</span><button type="button" class="btn sm ghost" data-all="1">全選</button><button type="button" class="btn sm ghost" data-all="0">全不選</button>
+        <span class="small muted" style="margin-left:6px">勾選的設為：</span>${RPT_SECS.map(x => `<button type="button" class="btn sm ghost" data-setsec="${x}">${x}</button>`).join('')}</div>
+      <div data-x="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px"></div></div>` }
+  ];
+  dialog({ title: '結案報告', wide: true, body: formHTML(fields), onOpen: ({ bd }) => {
+      const grid = $('[data-x=grid]', bd), msg = $('[data-x=msg]', bd), tools = $('[data-x=tools]', bd);
+      const draw = () => {
+        tools.classList.toggle('hide', !PH.length);
+        const n = PH.filter(p => p.on).length;
+        if (PH.length) msg.textContent = `共 ${PH.length} 張，已勾選 ${n} 張` + (PH.some(p => p.on && !p.sec) ? '　⚠ 有勾選的照片還沒分類' : '');
+        grid.innerHTML = PH.map((p, i) => `<div style="background:var(--card);border:1px solid ${p.on ? 'var(--accent)' : 'var(--line)'};border-radius:10px;overflow:hidden;opacity:${p.on ? 1 : .55}">
+          <label style="display:block;position:relative;cursor:pointer;aspect-ratio:4/3;background:#eee">${p.src ? `<img src="${p.src}" style="width:100%;height:100%;object-fit:cover;display:block">` : '<div class="small muted" style="padding:30px 8px;text-align:center">讀取中…</div>'}
+            <input type="checkbox" data-on="${i}" ${p.on ? 'checked' : ''} style="position:absolute;top:6px;left:6px;width:20px;height:20px"></label>
+          <div style="padding:6px;display:grid;gap:4px">
+            <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc((p.path ? p.path + '/' : '') + p.name)}">${esc((p.path ? p.path + '/' : '') + p.name)}</div>
+            <select data-sec="${i}" style="padding:4px"><option value="">— 分類 —</option>${RPT_SECS.map(x => `<option${p.sec === x ? ' selected' : ''}>${x}</option>`).join('')}</select>
+            <input data-cap="${i}" placeholder="說明（選填）" value="${esc(p.cap)}" style="padding:4px">
+            <div style="display:flex;gap:4px"><button type="button" class="btn sm ghost" data-mv="${i}:-1" style="flex:1">←</button><button type="button" class="btn sm ghost" data-mv="${i}:1" style="flex:1">→</button></div></div></div>`).join('');
+        $$('[data-on]', grid).forEach(el => el.onchange = () => { PH[+el.dataset.on].on = el.checked; draw(); });
+        $$('[data-sec]', grid).forEach(el => el.onchange = () => { PH[+el.dataset.sec].sec = el.value; draw(); });
+        $$('[data-cap]', grid).forEach(el => el.oninput = () => { PH[+el.dataset.cap].cap = el.value; });
+        $$('[data-mv]', grid).forEach(el => el.onclick = () => { const [i, d] = el.dataset.mv.split(':').map(Number), j = i + d; if (j < 0 || j >= PH.length) return; [PH[i], PH[j]] = [PH[j], PH[i]]; draw(); });
+      };
+      $$('[data-all]', bd).forEach(b => b.onclick = () => { PH.forEach(p => p.on = b.dataset.all === '1'); draw(); });
+      $$('[data-setsec]', bd).forEach(b => b.onclick = () => { PH.forEach(p => { if (p.on) p.sec = b.dataset.setsec; }); draw(); });
+      $('[data-x=local]', bd).onchange = async e => {
+        const fs = [...e.target.files]; e.target.value = '';
+        for (const f of fs) { try { PH.push({ id: 'L' + Date.now() + Math.random(), name: f.name, path: '', src: await rptResize(f), sec: rptGuessSec('', f.name), cap: '', on: true }); draw(); } catch (er) { toast(er.message, false); } }
+      };
+      $('[data-x=drive]', bd).onclick = async ev => {
+        const btn = ev.target, url = $('[name=_folder]', bd).value.trim();
+        if (!url) return toast('請貼上 Google 雲端資料夾網址', false);
+        btn.disabled = true; msg.textContent = '讀取資料夾…';
+        try {
+          const j = await api('driveList', { folder: url });
+          if (SET[fkey] !== url) { api('save', { table: '設定', row: { key: fkey, value: url } }).catch(() => {}); SET[fkey] = url; }
+          const have = new Set(PH.map(p => p.id));
+          const add = (j.files || []).filter(f => !have.has(f.id)).map(f => ({ id: f.id, name: f.name, path: f.folder || '', src: '', sec: rptGuessSec(f.folder, f.name), cap: '', on: true }));
+          if (!add.length) { msg.textContent = (j.files || []).length ? '這些照片已經讀過了' : '資料夾「' + (j.name || '') + '」裡沒有照片'; return; }
+          PH.push(...add); draw();
+          for (let i = 0; i < add.length; i += 6) {
+            msg.textContent = `下載照片 ${Math.min(i + 6, add.length)}／${add.length}…`;
+            const t = await api('driveThumbs', { ids: add.slice(i, i + 6).map(p => p.id), size: 1400 });
+            (t.images || []).forEach(im => { const p = PH.find(x => x.id === im.id); if (p) { if (im.data) p.src = im.data; else { p.on = false; p.err = im.error || '無法讀取'; } } });
+            draw();
+          }
+          const bad = add.filter(p => !p.src).length;
+          if (bad) toast(bad + ' 張照片無法讀取（可能不是圖片或檔案太大），已取消勾選', false);
+        } catch (er) {
+          msg.textContent = '';
+          toast(/未知的操作/.test(er.message) ? '後端還沒更新：請先把 Code.gs 換成新版並「新版本部署」，才能讀取雲端照片（也可先用「本機照片」）' : er.message, false);
+        } finally { btn.disabled = false; draw(); }
+      };
+    },
+    buttons: [{ text: '取消', cls: 'ghost', click: () => { if (after) setTimeout(after, 30); } }, '|', { text: '產生結案報告', cls: 'acc', click: async ({ bd }) => {
+      const o = formData(bd, fields);
+      const ph = PH.filter(p => p.on && p.src);
+      if (!ph.length) throw new Error('請先加入並勾選照片');
+      if (ph.some(p => !p.sec)) throw new Error('還有勾選的照片沒有分類（施工前／施工中／施工後）');
+      showBill(reportHTML(o, ph), after);
+    } }] });
+}
+function reportHTML(o, ph) {
+  const cols = Number(o['欄數']) === 3 ? 3 : 2;
+  const W = 794 - 120, gap = 12, cw = (W - gap * (cols - 1)) / cols, ch = Math.round(cw * 0.75), rowH = ch + 30 + gap;
+  const H = 1123 - 112, secH = 40;
+  const tr = (l, v) => v ? `<tr><th>${l}</th><td>${v}</td></tr>` : '';
+  const period = o['開工'] || o['完工'] ? [ymdFull(o['開工']), ymdFull(o['完工'])].filter(Boolean).join(' ～ ') : '';
+  const head = (first) => first ? `<div class="b-head">
+      <img src="${esc(LOGO)}" alt="">
+      <div class="b-co"><div class="b-coname">${esc(coSet('CO_NAME'))}</div><div>統一編號 ${esc(coSet('CO_TAXID'))}　電話 ${esc(coSet('CO_PHONE'))}</div><div>${esc(coSet('CO_ADDR'))}</div></div>
+      <div class="b-title"><div class="zh">結 案 報 告</div><div class="en">COMPLETION REPORT</div></div></div>
+    <div class="b-meta"><table class="b-kv">${tr('業　　主', esc(o['業主']))}${tr('工程案場', esc(o['案場']))}${tr('地　　址', esc(o['地址']))}</table>
+      <table class="b-kv">${tr('工程項目', esc(o['項目']))}${tr('施工期間', period)}${tr('報告日期', ymdFull(o['日期']))}</table></div>
+    ${o['說明'] ? `<div class="r-note">${esc(o['說明'])}</div>` : ''}`
+    : `<div class="r-mini"><span>${esc(coSet('CO_NAME'))}｜結案報告</span><span>${esc(o['案場'] || '')}</span></div>`;
+  const firstUsed = 250 + (o['說明'] ? 30 + Math.ceil(String(o['說明']).length / 40) * 22 : 0);
+  // 依分類排版成多頁
+  const pages = []; let cur = null, left = 0, n = 0;
+  const newPage = () => { cur = { first: !pages.length, blocks: [] }; pages.push(cur); left = H - (cur.first ? firstUsed : 50); };
+  newPage();
+  RPT_SECS.forEach(sec => {
+    const list = ph.filter(p => p.sec === sec); if (!list.length) return;
+    for (let i = 0; i < list.length; i += cols) {
+      const row = list.slice(i, i + cols);
+      const needTitle = i === 0 || !cur.blocks.length;
+      if (left < rowH + (needTitle ? secH : 0)) newPage();
+      const last = cur.blocks[cur.blocks.length - 1];
+      if (needTitle || !last || last.sec !== sec) { cur.blocks.push({ sec, cont: i > 0, rows: [] }); left -= secH; }
+      cur.blocks[cur.blocks.length - 1].rows.push(row.map(p => Object.assign({ no: ++n }, p)));
+      left -= rowH;
+    }
+  });
+  const signH = 190;
+  if (left < signH) newPage();
+  cur.sign = true;
+  const total = pages.length;
+  return pages.map((pg, pi) => `<div class="bill rpt">${head(pg.first)}
+    ${pg.blocks.map(b => `<div class="r-sec">${b.sec}${b.cont ? '（續）' : ''}</div>
+      ${b.rows.map(r => `<div class="r-row" style="grid-template-columns:repeat(${cols},1fr)">${r.map(p => `<figure><div class="r-img" style="height:${ch}px"><img src="${p.src}" alt=""></div><figcaption><b>${p.no}</b>${p.cap ? esc(p.cap) : esc(b.sec)}</figcaption></figure>`).join('')}</div>`).join('')}`).join('')}
+    ${pg.sign ? `<div class="r-sign"><div><div class="b-h">施工單位</div><div class="b-stamp has"><img src="${STAMP}" alt=""></div></div><div><div class="b-h">業主簽收</div><div class="b-stamp" style="height:150px">簽名／日期</div></div></div>` : ''}
+    <div class="r-pg">第 ${pi + 1} 頁／共 ${total} 頁</div></div>`).join('');
 }
 
 /* =====================================================================
