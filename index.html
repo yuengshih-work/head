@@ -2485,6 +2485,10 @@ function siteDetail(sid) {
       <div><h2>人力費用（依月）</h2><div class="list">${Object.keys(lm).length ? Object.keys(lm).sort().reverse().map(k => `<div class="row" style="grid-template-columns:1fr auto"><div>${k}</div><div class="amt">${money(lm[k])}</div></div>`).join('') : '<div class="empty">無</div>'}</div></div></div>`;
   const dl = dialog({ title: t['案場名稱'], wide: true, body,
     buttons: [{ text: '編輯案場', cls: 'ghost', click: () => setTimeout(() => editSite(t, {}, () => siteDetail(sid)), 40) },
+      { text: '結案報告', cls: 'ghost', click: () => { if (!cs.length) { toast('這個案場還沒有合約，請先新增合約', false); return false; }
+        if (cs.length === 1) return void setTimeout(() => reportDialog(cs[0]['合約ID'], () => siteDetail(sid)), 40);
+        setTimeout(() => dialog({ title: '選擇要做結案報告的合約', body: `<div class="list">${cs.map(c => `<div class="row click" data-rc="${esc(c['合約ID'])}" style="grid-template-columns:1fr auto"><div class="m"><div class="t1">${esc(c['合約說明'] || '合約')}</div><div class="t2">${esc(siteLabel(c['案場ID']))}${c['客戶名稱'] ? '・' + esc(c['客戶名稱']) : ''}</div></div><div class="amt">${money(c['合約金額'])}</div></div>`).join('')}</div>`,
+          onOpen: ({ bd, close }) => $$('[data-rc]', bd).forEach(r => r.onclick = () => { close(); reportDialog(r.dataset.rc, () => siteDetail(sid)); }), buttons: [{ text: '取消', cls: 'ghost' }] }), 40); } },
       { text: '查看費用', cls: 'ghost', click: () => { EXF.site = sid; EXF.month = ''; EXF.vendor = ''; FEE.tab = 'ven'; go('exp'); } }, '|', { text: '關閉', cls: 'acc' }] });
   $('[data-x=addkid]', dl.bd).onclick = () => { dl.close(); editSite(null, { '上層案場ID': sid }, () => siteDetail(sid)); };
   $$('[data-kid]', dl.bd).forEach(r => r.onclick = () => { dl.close(); editSite(site(r.dataset.kid), {}, () => siteDetail(sid)); });
